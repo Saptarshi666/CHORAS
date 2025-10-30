@@ -1,6 +1,6 @@
 [submodule "backend"]
 	path = backend
 	url = https://github.com/choras-org/backend.git
-[submodule "frontend"]
-	path = frontend
-	url = https://github.com/choras-org/frontend.git
+[submodule "frontend-v2"]
+	path = frontend-v2
+	url = https://github.com/choras-org/frontend-v2.git
