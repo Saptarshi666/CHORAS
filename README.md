@@ -32,7 +32,7 @@ If you have already performed the installation before, please refer to the instr
 1. In the command window, run ```cd backend``` to navigate to the backend folder.
 2. Create a new environment and install all the requirements by running the following (this will take a minute)
 ```shell
-conda create -n choras python=3.10
+conda create -n choras python=3.11
 
 conda activate choras
 
