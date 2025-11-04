@@ -5,7 +5,7 @@ services:
     ports:
       - "5432:5432"
     env_file:
-      - ./backend/.env.db.local
+      - .env.db
     volumes:
       - postgresql_data:/var/lib/postgresql/data/
 
@@ -15,27 +15,21 @@ services:
 
   frontend:
     platform: linux/amd64
-    build: ./frontend
+    image: silvinwillemsen/choras-frontend:latest
     ports:
       - "5173:5173"
-    depends_on:
-      - backend
     environment:
       - REACT_APP_API_URL=http://localhost:5001
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
+    depends_on:
+      - backend
 
   backend:
     platform: linux/amd64
-    build: ./backend
+    image: silvinwillemsen/choras-backend:latest
     ports:
       - "5001:5001"
-    volumes:
-      - ./backend:/app
     env_file:
-      - ./backend/.env.api.local
-    entrypoint: ["/app/entrypoint.sh"]
+      - .env.api
     depends_on:
       - db_service
       - redis
