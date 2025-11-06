@@ -5,7 +5,7 @@ This is the public repository for the The Community Hub for Open-source Room Aco
 <img width="1512" height="786" alt="Screenshot 2025-11-04 at 11 23 16" src="https://github.com/user-attachments/assets/b3eb28d6-8a19-49a8-a8a9-08f156b09ef9" />
 
 ## Note on simulation time
-To make sure that your first simulations don't take forever, of settings that cause long simulation times:
+To make sure that your first simulations don't take forever, take note of the following settings that cause long simulation times:
 - Diffusion Equation
   - Material properties with low absorption
   - A low value for **Characteristic length** (start with **3**, especially for a larger geometry (such as the Room2215 geometries))
