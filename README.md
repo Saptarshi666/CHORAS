@@ -7,7 +7,7 @@ This is the public repository for the The Community Hub for Open-source Room Aco
 ## Note on simulation time
 To make sure that your first simulations don't take forever, take note of the following settings that cause long simulation times:
 - Diffusion Equation
-  - Material properties with low absorption
+  - **Material properties** with low absorption (start with _Upholstered concert chairs_ for prototyping)
   - A low value for **Characteristic length** (start with **3**, especially for a larger geometry (such as the Room2215 geometries))
   - A high value for **Impulse Response Length** (**Simulation length** is set to **IR Length**)
 - DG
