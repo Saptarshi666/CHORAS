@@ -14,7 +14,7 @@ This section provides a description of the simulation specific settings in CHORA
   - 🟨 _Energy decay threshold_: The (negative) dB value that the simulation will run until (only used when  _Simulation length_ is set to EDT). 
   - 🟥 _Characteristic length_: The length between two mesh nodes that the mesher tries to aim for. (This greatly influences simulation time. Start with **3**, especially for a larger geometry (such as the Room2215 geometries))
  
-  - 🟥 Additional note on surfaces: Material properties that cause a low average absorption drastically increase the simulation time (start with _Upholstered concert chairs_ for prototyping)
+  - 🟥 Additional note on surfaces: a low average absorption drastically increase the simulation time (start with _Upholstered concert chairs_ for all surfaces for prototyping)
 
 - Discontinuous Galerkin method
   - _Speed of sound_: The speed of sound
