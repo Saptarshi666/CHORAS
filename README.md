@@ -4,17 +4,27 @@ This is the public repository for the The Community Hub for Open-source Room Aco
 
 <img width="1512" height="786" alt="Screenshot 2025-11-04 at 11 23 16" src="https://github.com/user-attachments/assets/b3eb28d6-8a19-49a8-a8a9-08f156b09ef9" />
 
-## Note on simulation time
-To make sure that your first simulations don't take forever, take note of the following settings that cause long simulation times:
-- Diffusion Equation
-  - **Material properties** with low absorption (start with _Upholstered concert chairs_ for prototyping)
-  - A low value for **Characteristic length** (start with **3**, especially for a larger geometry (such as the Room2215 geometries))
-  - A high value for **Impulse Response Length** (**Simulation length** is set to **IR Length**)
-- DG
-  - A high value for **Impulse Response Length** (start with 0.1 for prototyping)
-  - A high value for **Frequency upper limit** (start with 100 for prototyping)
-  - General tip: leave **Poly order**, **Points per wavelength**, and **CFL** untouched. :)
+## Settings
+This section provides a description of the simulation specific settings in CHORAS. The settings marked in **bold** greatly influence simulation time.
 
+- Diffusion Equation method
+  - _Simulation length_: Determines whether to use _Impuslse response length_ or _Energy decay threshold_ to determine the simulation length
+  - **_Impulse response length_**: Sets the length of the generated impulse response (only used when _Simulation length_ is set to IR Length!)
+  - _Speed of sound_: The speed of sound
+  - **_Energy decay threshold_**: The (negative) dB value that the simulation will run until (only used when  _Simulation length_ is set to EDT). 
+  - _**Characteristic length**_: The length between two mesh nodes that the mesher tries to aim for. (This greatly influences simulation time. Start with **3**, especially for a larger geometry (such as the Room2215 geometries))
+ 
+  - Additional note on surfaces: **Material properties** that cause a low average absorption drastically increase the simulation time (start with _Upholstered concert chairs_ for prototyping)
+
+- Discontinuous Galerkin method
+  - _Speed of sound_: The speed of sound
+  - _**Impulse Response Length**_: Sets the length of the generated impulse response (greatly influences simulation time. Start with 0.1 s for prototyping.)
+  - _**Frequency upper limit**_: The highest frequency that DG will generate. (greatly influences simulation time. Start with 100 Hz for prototyping.)
+  - _Air density_: The density of the air
+  - _Poly order_: The polynomial order of the DG method (better to leave this untouched)
+  - _Points per wavelength_: The number of points per wavelength to use in the DG method (better to leave this untouched)
+  - _CFL_: The Courant–Friedrichs–Lewy condition (better to leave this untouched)
+ 
 ## Submodules
 
 You'll find two submodules in this repository:
