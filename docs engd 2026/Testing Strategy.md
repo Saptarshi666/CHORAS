@@ -22,7 +22,7 @@
    - **Target**: Individual functions and components
    - **Responsibility**: Each developer writes for their code
    - **Tool**: pytest (backend), Jest (frontend)
-   - **Coverage goal**: 70%+
+   - **Coverage goal**: 70%+ (not sure figure out based on current coverage goal)
    - **Tentative - Celery Tasks**: Test individual task functions without full Celery setup
    
    #### Integration Tests (Tentative)
