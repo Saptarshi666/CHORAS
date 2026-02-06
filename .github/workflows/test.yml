@@ -62,7 +62,7 @@ jobs:
     - name: Build Docker images
       run: |
         if [ -f docker-compose.yml ]; then
-          docker-compose build || echo "Docker build failed, skipping"
+          docker compose build || echo "Docker build failed, skipping"
         else
           echo "docker-compose.yml not found, skipping build"
         fi
@@ -70,10 +70,10 @@ jobs:
     - name: Test Docker services start
       run: |
         if [ -f docker-compose.yml ]; then
-          docker-compose up -d || echo "Some containers may fail to start"
+          docker compose up -d || echo "Some containers may fail to start"
           sleep 30
-          docker-compose ps
-          docker-compose down || echo "Docker down failed"
+          docker compose ps
+          docker compose down || echo "Docker down failed"
         else
           echo "docker-compose.yml not found, skipping Docker test"
         fi
