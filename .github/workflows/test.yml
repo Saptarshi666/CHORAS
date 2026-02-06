@@ -34,6 +34,7 @@ jobs:
         else
           echo "No backend/requirements.txt found, skipping installation"
         fi
+        pip install pyroomacoustics
         pip install pytest pytest-cov || echo "Skipping pytest install if pip fails"
 
     - name: Run tests
