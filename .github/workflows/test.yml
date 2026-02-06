@@ -21,7 +21,6 @@ jobs:
       with:
         python-version: '3.10'
 
-    # Install dependencies safely
     - name: Install dependencies
       run: |
         if [ -f backend/requirements.txt ]; then
@@ -32,7 +31,6 @@ jobs:
         fi
         pip install pytest pytest-cov || echo "Skipping pytest install if pip fails"
 
-    # Run tests safely
     - name: Run tests
       run: |
         if [ -d backend ]; then
@@ -44,13 +42,13 @@ jobs:
           fi
         else
           echo "backend/ folder not found, skipping tests"
+        fi
 
-    # Upload coverage only if it exists
     - name: Upload coverage
       uses: codecov/codecov-action@v3
       with:
         files: ./backend/coverage.xml
-      continue-on-error: true  # prevents failure if coverage.xml is missing
+      continue-on-error: true
 
   docker-build:
     runs-on: ubuntu-latest
@@ -61,21 +59,21 @@ jobs:
       with:
         submodules: recursive
 
-    # Build Docker images only if docker-compose.yml exists
     - name: Build Docker images
       run: |
         if [ -f docker-compose.yml ]; then
           docker-compose build || echo "Docker build failed, skipping"
         else
           echo "docker-compose.yml not found, skipping build"
+        fi
 
-    # Test Docker services start safely
     - name: Test Docker services start
       run: |
         if [ -f docker-compose.yml ]; then
           docker-compose up -d || echo "Some containers may fail to start"
-          sleep 10
+          sleep 30
           docker-compose ps
           docker-compose down || echo "Docker down failed"
         else
           echo "docker-compose.yml not found, skipping Docker test"
+        fi
