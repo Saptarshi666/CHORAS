@@ -28,7 +28,7 @@ services:
   backend:
     platform: linux/amd64
     build:
-      context: ./backend       # path to your local backend Dockerfile
+      context: . #root of choras
       dockerfile: Dockerfile
     ports:
       - "5001:5001"
