@@ -15,8 +15,9 @@ services:
 
   frontend:
     platform: linux/amd64
-    pull_policy: always
-    image: silvinwillemsen/choras-frontend:latest
+    build:
+      context: ./frontend-v2   # path to your local frontend Dockerfile
+      dockerfile: Dockerfile    # optional if named Dockerfile
     ports:
       - "5173:5173"
     environment:
@@ -26,8 +27,9 @@ services:
 
   backend:
     platform: linux/amd64
-    pull_policy: always
-    image: silvinwillemsen/choras-backend:latest
+    build:
+      context: ./backend       # path to your local backend Dockerfile
+      dockerfile: Dockerfile
     ports:
       - "5001:5001"
     env_file:
