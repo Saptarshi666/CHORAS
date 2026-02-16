@@ -156,3 +156,8 @@ CI pipeline includes:
 3. Containers must be self-contained.
 4. Cloud execution must mirror local behavior.
 5. Scalability must be measurable.
+
+---
+
+# 6. Testing Philosophy
+For our project, we have decided to first explore the current repository and behavior. Once we are confident with the behavior of the code base, we begin by adding the behavior that we want and then also simultaneously write the tests for the code. Once we are fairly confident with the code and believe that most of the base cases have been taken care of, we focus on optimizing the depth and variety of test cases so that we can find more flaws and optimize the code
