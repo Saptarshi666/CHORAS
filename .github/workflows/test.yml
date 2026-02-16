@@ -61,6 +61,7 @@ jobs:
           pytest --cov=. --cov-report=xml || echo "Tests failed, but workflow continues"
         else
           echo "backend/ folder not found, skipping tests"
+        fi
 
     - name: Upload coverage
       uses: codecov/codecov-action@v3
