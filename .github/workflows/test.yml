@@ -72,7 +72,7 @@ jobs:
 
     # NEW: Upload coverage reports as artifacts
     - name: Upload coverage HTML report
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()  # Upload even if tests fail
       with:
         name: coverage-html-report
@@ -80,7 +80,7 @@ jobs:
         retention-days: 30
 
     - name: Upload coverage XML
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()  # Upload even if tests fail
       with:
         name: coverage-xml
