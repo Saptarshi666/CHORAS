@@ -2,19 +2,35 @@ name: CHORAS Tests
 
 on:
   push:
-    branches: [ main, dev ]
+    branches:
+      - main       # Stable code only
+      - dev        # Team integration branch
+      - 'feature/*'
+      - 'bugfix/*'
   pull_request:
-    branches: [ main, dev ]
+    branches:
+      - main
+      - dev
+      - 'feature/*'
+      - 'bugfix/*'
 
 jobs:
   backend-tests:
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
       with:
         submodules: recursive
+
+    - name: Check branch naming
+      run: |
+        BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+        if [[ ! "$BRANCH_NAME" =~ ^(main|dev|feature/.*|bugfix/.*)$ ]]; then
+          echo "Error: Branch '$BRANCH_NAME' does not follow the naming strategy."
+          exit 1
+        fi
 
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -40,15 +56,11 @@ jobs:
     - name: Run tests
       run: |
         if [ -d backend ]; then
+          export PYTHONPATH=$PYTHONPATH:$(pwd)/simulation-backend
           cd backend
-          if ls test_*.py 1> /dev/null 2>&1 || [ -d tests ]; then
-            pytest --cov=. --cov-report=xml || echo "Tests failed, but workflow continues"
-          else
-            echo "No tests found, skipping"
-          fi
+          pytest --cov=. --cov-report=xml || echo "Tests failed, but workflow continues"
         else
           echo "backend/ folder not found, skipping tests"
-        fi
 
     - name: Upload coverage
       uses: codecov/codecov-action@v3
