@@ -41,6 +41,7 @@ services:
       - redis
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./uploads:/app/uploads
 
   # BUILD-ONLY: DE simulation (profile: sim_method)
   de-method:
