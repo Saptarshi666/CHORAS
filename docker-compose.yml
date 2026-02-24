@@ -42,6 +42,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./uploads:/app/uploads
+      - ./simulation-backend:/app/simulation-backend  # Only this
 
   # BUILD-ONLY: DE simulation (profile: sim_method)
   de-method:
