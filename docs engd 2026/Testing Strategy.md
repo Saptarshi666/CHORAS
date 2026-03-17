@@ -180,9 +180,6 @@ TestCompass determines *which behavioral paths* to exercise with that data.
 | Partition ID | Class | Representative Value |
 |---|---|---|
 | EP-DB1 | `SimulationRun` exists in DB | Normal run |
-| EP-DB2 | `SimulationRun` not found in DB | `session.query(SimulationRun).get(id)` returns `None` |
-| EP-DB3 | `Simulation` not found for a valid `SimulationRun` | `filter_by(simulationRunId=...)` returns `None` |
-| EP-DB4 | DB commit fails | `session.commit()` raises `SQLAlchemyError` |
 
 ---
 
