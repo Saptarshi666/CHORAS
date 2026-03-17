@@ -13,14 +13,9 @@ CHORAS/
 ├── backend/                      # Backend submodule (Flask API)
 ├── frontend-v2/                  # Frontend submodule (React)
 ├── docs engd 2026/              # Team documentation (YOUR docs!)
-│   ├── CELERY_CURRENT_STATE.md
 │   ├── Config Guide.md          # This file
-│   ├── Configuration Management Plan.md
-│   ├── Quality Gates.md
-│   ├── Scalability Test Plan.md
-│   ├── Test Coverage.md
-│   ├── Testing Guide.md
 │   └── Testing Strategy.md
+    
 ├── example_geometries/           # Sample room geometries
 ├── .env.api                      # Backend API environment vars (NOT in git!)
 ├── .env.db                       # Database environment vars (NOT in git!)
@@ -80,59 +75,14 @@ ls frontend-v2/
 # Should see files in both directories (not empty)
 ```
 
-### Step 3: Set Up Environment Files
 
-**IMPORTANT**: The `.env.api` and `.env.db` files already exist in the repository but should NOT be committed with real credentials!
-
+### Step 3: Start CHORAS
 ```bash
-# Option 1: If .env files exist, verify they don't have production credentials
-cat .env.api
-cat .env.db
-
-# Option 2: If you need to create them from scratch
-# (They might already be there, so check first!)
-```
-
-**Edit `.env.api`** (if needed):
-```bash
-# Open with your editor
-nano .env.api
-# or
-code .env.api
-```
-
-Example content:
-```
-FLASK_ENV=development
-SECRET_KEY=your-local-dev-secret-key
-DATABASE_URL=postgresql://choras_user:choras_pass@db:5432/choras
-CELERY_BROKER_URL=redis://redis:6379/0
-```
-
-**Edit `.env.db`** (if needed):
-```bash
-nano .env.db
-```
-
-Example content:
-```
-POSTGRES_USER=choras_user
-POSTGRES_PASSWORD=choras_pass
-POSTGRES_DB=choras
-```
-
-⚠️ **CRITICAL**: Never commit `.env` files with real passwords to Git!
-
-### Step 4: Start CHORAS
-```bash
+#build all services
+./CHORAS_BUILD.sh
 # Start all services
 docker-compose up
 
-# Or run in background
-docker-compose up -d
-
-# Check if everything is running
-docker-compose ps
 ```
 
 Expected services:
@@ -236,28 +186,6 @@ git push
 
 ---
 
-## Commit Message Format
-
-Follow **Conventional Commits** format:
-
-```
-<type>: <description>
-
-[optional body]
-
-[optional footer]
-```
-
-### Types:
-- **feat**: New feature (e.g., `feat: add DG simulation container`)
-- **fix**: Bug fix (e.g., `fix: resolve container startup error`)
-- **test**: Adding tests (e.g., `test: add Celery task tests`)
-- **docs**: Documentation (e.g., `docs: update setup instructions`)
-- **refactor**: Code refactoring (e.g., `refactor: simplify task queue logic`)
-- **perf**: Performance improvement (e.g., `perf: optimize container startup time`)
-- **chore**: Maintenance (e.g., `chore: update dependencies`)
-- **ci**: CI/CD changes (e.g., `ci: add Docker build to GitHub Actions`)
-
 ### Examples:
 ```bash
 # Good commits
@@ -271,34 +199,6 @@ git commit -m "update"
 git commit -m "fix stuff"
 git commit -m "asdfasdf"
 ```
-
----
-
-## Environment Variables Reference
-
-### `.env.api` (Backend Configuration)
-```bash
-FLASK_ENV=development              # or production
-SECRET_KEY=your-secret-key         # Generate with: python -c "import secrets; print(secrets.token_hex(32))"
-DATABASE_URL=postgresql://user:pass@db:5432/choras
-CELERY_BROKER_URL=redis://redis:6379/0
-CELERY_RESULT_BACKEND=redis://redis:6379/0
-```
-
-### `.env.db` (Database Configuration)
-```bash
-POSTGRES_USER=choras_user
-POSTGRES_PASSWORD=your-secure-password
-POSTGRES_DB=choras
-POSTGRES_PORT=5432
-```
-
-### Security Rules:
-- ⛔ **NEVER** commit real passwords to Git
-- ⛔ **NEVER** commit API keys or secrets
-- ✅ **DO** use different passwords for dev vs production
-- ✅ **DO** document what variables are needed (without values)
-- ✅ **DO** add `.env` to `.gitignore` (already done)
 
 ---
 
@@ -375,17 +275,6 @@ docker-compose logs frontend-v2
 docker-compose logs --tail=50
 ```
 
-### Rebuilding Containers
-```bash
-# Rebuild all containers
-docker-compose build
-
-# Rebuild specific service
-docker-compose build backend
-
-# Rebuild and start
-docker-compose up --build
-```
 
 ### Checking Service Status
 ```bash
@@ -395,15 +284,6 @@ docker-compose ps
 # Enter a running container (for debugging)
 docker-compose exec backend bash
 docker-compose exec frontend-v2 sh
-```
-
-### Testing Environment
-```bash
-# Run tests in isolated environment
-docker-compose -f docker-compose.test.yml up --abort-on-container-exit
-
-# Clean up test environment
-docker-compose -f docker-compose.test.yml down -v
 ```
 
 ---

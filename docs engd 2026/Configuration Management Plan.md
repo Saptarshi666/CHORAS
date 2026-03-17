@@ -1,7 +1,7 @@
 # Configuration Management Plan
    ## CHORAS Scalability Project
    
-   ### My Role Responsibilities (from project brief)
+   ### My Role Responsibilities s
    As Configuration Manager, I am responsible for:
    - ✅ Define processes and procedures for version control
    - ✅ Ensure all hardware/software components are clearly identified
@@ -16,14 +16,14 @@
    - Submodules: backend/, frontend-v2/,.github,example_geometries
    - NEW: Individual directories for simulation method containers
    - Branch strategy: [To be defined - see below]
-   
-   ### 2. Branching Strategy (Initial Proposal)
+
    - The default branch of the repo is named as `main` this branch has been forked from the `dev` branch of the original repo
    - `main` - Stable code only, matches upstream CHORAS
    - `dev` - Integration branch for team development
    - `feature/*` - Individual feature branches (e.g., feature/de-container)
    - `bugfix/*` - Bug fix branches
-   - `container/*` - Branches for containerization work
+   - `container/*` - Branches for containerization works
+   - `testing/*` - Testing branches
    
    ### 3. Environment Management
    - Development: Local Docker containers (multi-container setup)
