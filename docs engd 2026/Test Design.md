@@ -252,92 +252,13 @@ represent the intended API of each component.
 
 ---
 
-### 4.4 `_connect` / `_disconnect` Tests
+---
+
+### 4.4 SFTP Operation Tests
 
 ---
 
-#### I1 — `_connect`: uses password when provided
-
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → CloudExecutor._connect()` |
-| **Partitions** | EP-S1 |
-| **What is being tested** | When `password` is set, `paramiko.SSHClient.connect` is called with `password`, `hostname`, and `username` |
-| **Preconditions** | `paramiko.SSHClient` mocked |
-| **Input** | Executor with `hostname="remote.host.com"`, `username="user"`, `password="secret"` |
-| **Process** | 1. Patch `paramiko.SSHClient` · 2. Call `executor._connect()` · 3. Inspect `connect()` kwargs |
-| **Expected Output** | `connect` called with `password="secret"`, `hostname="remote.host.com"`, `username="user"` |
-| **Pass Criteria** | All three kwargs assertions pass |
-| **Implementation Note** | Requires `_connect()` method to be added to `CloudExecutor` |
-
----
-
-#### I2 — `_connect`: uses key path when provided
-
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → CloudExecutor._connect()` |
-| **Partitions** | EP-S1 |
-| **What is being tested** | When `key_path` is set, `connect` is called with `key_filename` and agent/key lookup disabled |
-| **Preconditions** | `paramiko.SSHClient` mocked |
-| **Input** | Executor with `key_path="/home/user/.ssh/id_rsa"`, no password |
-| **Process** | 1. Patch `paramiko.SSHClient` · 2. Call `executor._connect()` · 3. Inspect `connect()` kwargs |
-| **Expected Output** | `key_filename == "/home/user/.ssh/id_rsa"` · `allow_agent is False` · `look_for_keys is False` |
-| **Pass Criteria** | All three kwargs assertions pass |
-
----
-
-#### I3 — `_connect`: closes stale connection before reconnecting
-
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → CloudExecutor._connect()` |
-| **Partitions** | EP-S1 |
-| **What is being tested** | If `ssh_client` is already set when `_connect()` is called, the old client is closed before a new one is created |
-| **Preconditions** | `executor.ssh_client` is pre-set to a mock |
-| **Input** | Existing mock SSH client on `executor.ssh_client` |
-| **Process** | 1. Attach old mock client · 2. Patch `paramiko.SSHClient` · 3. Call `_connect()` · 4. Assert old client was closed |
-| **Expected Output** | `old_client.close()` called once |
-| **Pass Criteria** | `old_client.close.assert_called_once()` passes |
-
----
-
-#### I4 — `_disconnect`: closes client and sets to `None`
-
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → CloudExecutor._disconnect()` |
-| **Partitions** | EP-S1 |
-| **What is being tested** | `_disconnect()` closes the SSH client and sets `ssh_client` to `None` |
-| **Preconditions** | `executor.ssh_client` is a mock |
-| **Input** | Mock SSH client attached to `executor.ssh_client` |
-| **Process** | 1. Attach mock · 2. Call `executor._disconnect()` · 3. Assert close called · 4. Assert `ssh_client is None` |
-| **Expected Output** | `mock_ssh.close()` called · `executor.ssh_client is None` |
-| **Pass Criteria** | Both assertions pass |
-| **Implementation Note** | Requires `_disconnect()` method to be added to `CloudExecutor` |
-
----
-
-#### I5 — `_disconnect`: safe when `ssh_client` is already `None`
-
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → CloudExecutor._disconnect()` |
-| **Partitions** | EP-S1 |
-| **What is being tested** | Calling `_disconnect()` when no connection exists does not raise |
-| **Preconditions** | `executor.ssh_client = None` |
-| **Input** | None |
-| **Process** | 1. Ensure `ssh_client is None` · 2. Call `_disconnect()` · 3. Assert no exception |
-| **Expected Output** | No exception raised |
-| **Pass Criteria** | Call completes without error |
-
----
-
-### 4.5 SFTP Operation Tests
-
----
-
-#### I6 — `upload_file_via_sftp`: opens SFTP and calls `put`
+#### I1 — `upload_file_via_sftp`: opens SFTP and calls `put`
 
 | Field | Detail |
 |---|---|
@@ -352,23 +273,8 @@ represent the intended API of each component.
 
 ---
 
-#### B1 — `upload_file_via_sftp`: raises when not connected
 
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → upload_file_via_sftp()` |
-| **Partitions** | EP-S2 |
-| **What is being tested** | Calling upload before `_connect()` raises `RuntimeError("not connected")` |
-| **Preconditions** | `executor.ssh_client = None` |
-| **Input** | `local = "local.json"` · `remote = "remote.json"` |
-| **Process** | 1. Ensure `ssh_client is None` · 2. Call `upload_file_via_sftp` · 3. Observe exception |
-| **Expected Output** | `RuntimeError` raised matching `"not connected"` |
-| **Pass Criteria** | `pytest.raises(RuntimeError, match="not connected")` passes |
-| **Implementation Note** | Requires `upload_file_via_sftp()` to check `ssh_client` is not `None` before proceeding |
-
----
-
-#### I7 — `_download_file_via_sftp`: calls `sftp.get` with correct paths
+#### I2 — `_download_file_via_sftp`: calls `sftp.get` with correct paths
 
 | Field | Detail |
 |---|---|
@@ -383,22 +289,8 @@ represent the intended API of each component.
 
 ---
 
-#### B2 — `_download_file_via_sftp`: raises when not connected
 
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → _download_file_via_sftp()` |
-| **Partitions** | EP-S2 |
-| **What is being tested** | Calling download before `_connect()` raises `RuntimeError("not connected")` |
-| **Preconditions** | `executor.ssh_client = None` |
-| **Input** | `remote = "remote.json"` · `local = "local.json"` |
-| **Process** | 1. Ensure `ssh_client is None` · 2. Call `_download_file_via_sftp` · 3. Observe exception |
-| **Expected Output** | `RuntimeError` raised matching `"not connected"` |
-| **Pass Criteria** | `pytest.raises(RuntimeError, match="not connected")` passes |
-
----
-
-#### I8 — `_list_remote_files`: returns full paths, excludes hidden files
+#### I3 — `_list_remote_files`: returns full paths, excludes hidden files
 
 | Field | Detail |
 |---|---|
@@ -413,22 +305,8 @@ represent the intended API of each component.
 
 ---
 
-#### B3 — `_list_remote_files`: raises when not connected
 
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → _list_remote_files()` |
-| **Partitions** | EP-S2 |
-| **What is being tested** | Calling list before `_connect()` raises `RuntimeError("not connected")` |
-| **Preconditions** | `executor.ssh_client = None` |
-| **Input** | `remote_dir = "remote/dir"` |
-| **Process** | 1. Ensure `ssh_client is None` · 2. Call `_list_remote_files` · 3. Observe exception |
-| **Expected Output** | `RuntimeError` raised matching `"not connected"` |
-| **Pass Criteria** | `pytest.raises(RuntimeError, match="not connected")` passes |
-
----
-
-#### I9 — `_delete_remote_path`: runs `rm -rf` command
+#### I4 — `_delete_remote_path`: runs `rm -rf` command
 
 | Field | Detail |
 |---|---|
@@ -447,7 +325,7 @@ represent the intended API of each component.
 
 ---
 
-#### I10 — `build_singularity_image`: runs correct build command
+#### I5 — `build_singularity_image`: runs correct build command
 
 | Field | Detail |
 |---|---|
@@ -477,7 +355,7 @@ represent the intended API of each component.
 
 ---
 
-#### I11 — `execute_singularity_image`: runs `nohup` command in background
+#### I6 — `execute_singularity_image`: runs `nohup` command in background
 
 | Field | Detail |
 |---|---|
@@ -594,7 +472,7 @@ represent the intended API of each component.
 
 ---
 
-#### I12 — Downloads only `.json` and `.csv`, returns `True`
+#### I7 — Downloads only `.json` and `.csv`, returns `True`
 
 | Field | Detail |
 |---|---|
@@ -609,7 +487,7 @@ represent the intended API of each component.
 
 ---
 
-#### I13 — Deletes sandbox and tar after download
+#### I8 — Deletes sandbox and tar after download
 
 | Field | Detail |
 |---|---|
@@ -624,7 +502,7 @@ represent the intended API of each component.
 
 ---
 
-#### I14 — Skips tar deletion when `remote_tar_path` is `None`
+#### I9 — Skips tar deletion when `remote_tar_path` is `None`
 
 | Field | Detail |
 |---|---|
@@ -657,7 +535,7 @@ represent the intended API of each component.
 
 ---
 
-#### I15 — Returns `True` when job completes on first poll
+#### I10 — Returns `True` when job completes on first poll
 
 | Field | Detail |
 |---|---|
@@ -673,7 +551,7 @@ represent the intended API of each component.
 
 ---
 
-#### I16 — Polls multiple cycles before completion
+#### I11 — Polls multiple cycles before completion
 
 | Field | Detail |
 |---|---|
@@ -688,22 +566,7 @@ represent the intended API of each component.
 
 ---
 
-#### I17 — Retries polling on SSH connect failure
-
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → poll_until_complete()` |
-| **Partitions** | EP-S2 |
-| **What is being tested** | If `_connect()` raises on the first attempt, polling retries and succeeds on the next cycle |
-| **Preconditions** | `_connect` raises once then succeeds · final poll returns 100% |
-| **Input** | `_connect` side effects: `[Exception("SSH timeout"), None]` |
-| **Process** | 1. Mock flaky `_connect` · 2. Run `poll_until_complete` · 3. Assert connect was called at least twice and result is `True` |
-| **Expected Output** | `result is True` · `connect_calls >= 2` |
-| **Pass Criteria** | Both assertions pass |
-
----
-
-#### I18 — Applies backoff after fast phase cycles
+#### I13 — Applies backoff after fast phase cycles
 
 | Field | Detail |
 |---|---|
@@ -718,7 +581,7 @@ represent the intended API of each component.
 
 ---
 
-#### I19 — Local JSON written only when progress changes
+#### I14 — Local JSON written only when progress changes
 
 | Field | Detail |
 |---|---|
@@ -736,7 +599,7 @@ represent the intended API of each component.
 
 ---
 
-#### I20 — Returns job ID and `_CompletedJob`
+#### I15 — Returns job ID and `_CompletedJob`
 
 | Field | Detail |
 |---|---|
@@ -752,7 +615,7 @@ represent the intended API of each component.
 
 ---
 
-#### I21 — Uploads tar and JSON files
+#### I16 — Uploads tar and JSON files
 
 | Field | Detail |
 |---|---|
@@ -766,7 +629,7 @@ represent the intended API of each component.
 
 ---
 
-#### I22 — Calls `poll_until_complete`
+#### I17 — Calls `poll_until_complete`
 
 | Field | Detail |
 |---|---|
@@ -779,19 +642,6 @@ represent the intended API of each component.
 
 ---
 
-#### I23 — Image tag stripped from sandbox name
-
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → CloudExecutor.execute()` |
-| **Partitions** | EP-S1 |
-| **What is being tested** | The `:latest` tag is removed from the image name when constructing the sandbox name — sandbox names cannot contain colons |
-| **Input** | `method_config["container_image"] = "dg_image:latest"` |
-| **Process** | 1. Mock all SSH methods · 2. Call `execute()` · 3. Inspect first argument to `build_singularity_image` |
-| **Expected Output** | Sandbox name contains `"dg_image"` but not `":latest"` |
-| **Pass Criteria** | `":latest" not in sandbox_arg` and `"dg_image" in sandbox_arg` |
-
----
 
 ## 5. `test_local_executor.py` — Test Design
 
@@ -930,42 +780,12 @@ represent the intended API of each component.
 
 ---
 
-#### U25 — `_jobs` dict initialised empty
-
-| Field | Detail |
-|---|---|
-| **Component** | `local_executor.py → LocalExecutor.__init__()` |
-| **Partitions** | EP-D1 |
-| **What is being tested** | The `_jobs` dict starts empty on construction — no stale state from previous runs |
-| **Input** | `LocalExecutor()` |
-| **Process** | 1. Instantiate · 2. Assert `_jobs` |
-| **Expected Output** | `executor._jobs == {}` |
-| **Pass Criteria** | Assertion passes |
-| **Implementation Note** | Requires `_jobs = {}` to be added to `__init__` |
-
----
 
 ### 5.3 `LocalExecutor.execute` Tests
 
 ---
 
-#### I24 — Returns job ID and container
-
-| Field | Detail |
-|---|---|
-| **Component** | `local_executor.py → LocalExecutor.execute()` |
-| **Partitions** | EP-D1, EP-M1 |
-| **What is being tested** | `execute()` returns a tuple of `(job_id, container)` where `job_id` is a UUID and `container` is the Docker container object |
-| **Preconditions** | Docker mocked · `get_host_path_for_container_path` mocked |
-| **Input** | Valid `method_config` and `sim_config` |
-| **Process** | 1. Mock Docker and resolver · 2. Call `execute(method_config, sim_config)` · 3. Unpack `(job_id, container)` · 4. Assert types |
-| **Expected Output** | `job_id` is a 36-char UUID · `container` is the mock container |
-| **Pass Criteria** | `isinstance(job_id, str)` · `len(job_id) == 36` · `container is fake_container` |
-| **Implementation Note** | Requires `execute()` to return `(uuid4_string, container)` |
-
----
-
-#### I25 — Stores job in `_jobs` dict
+#### I20 — Stores job in `_jobs` dict
 
 | Field | Detail |
 |---|---|
@@ -981,7 +801,7 @@ represent the intended API of each component.
 
 ---
 
-#### I26 — Passes correct image and env to `containers.run`
+#### I21 — Passes correct image and env to `containers.run`
 
 | Field | Detail |
 |---|---|
@@ -995,7 +815,7 @@ represent the intended API of each component.
 
 ---
 
-#### I27 — Volume mount uses resolved host path
+#### I22 — Volume mount uses resolved host path
 
 | Field | Detail |
 |---|---|
@@ -1010,18 +830,6 @@ represent the intended API of each component.
 
 ---
 
-#### I28 — Container runs in detached mode
-
-| Field | Detail |
-|---|---|
-| **Component** | `local_executor.py → LocalExecutor.execute()` |
-| **Partitions** | EP-D1 |
-| **What is being tested** | `containers.run` is always called with `detach=True` so `execute()` returns immediately |
-| **Process** | 1. Mock Docker · 2. Call `execute()` · 3. Assert `detach` kwarg |
-| **Expected Output** | `detach == True` |
-| **Pass Criteria** | `call_kwargs["detach"] is True` |
-
----
 
 #### B9 — Raises on `containers.run` failure
 
@@ -1037,21 +845,8 @@ represent the intended API of each component.
 
 ---
 
-#### I29 — Each call produces a unique job ID
 
-| Field | Detail |
-|---|---|
-| **Component** | `local_executor.py → LocalExecutor.execute()` |
-| **Partitions** | EP-D1 |
-| **What is being tested** | Two successive calls to `execute()` with the same config produce different job IDs |
-| **Input** | Two calls with identical `method_config` and `sim_config` |
-| **Process** | 1. Mock Docker · 2. Call `execute()` twice · 3. Unpack both job IDs · 4. Assert they differ |
-| **Expected Output** | `job_id_1 != job_id_2` |
-| **Pass Criteria** | Inequality assertion passes |
-
----
-
-#### I30 — Uses `container_name` from `method_config`
+#### I25 — Uses `container_name` from `method_config`
 
 | Field | Detail |
 |---|---|
@@ -1094,43 +889,29 @@ represent the intended API of each component.
 | U22 | EP-D1 | `LocalExecutor.__init__` | Unit |
 | U23 | EP-D1 | `LocalExecutor.__init__` | Unit |
 | U24 | EP-D1 | `LocalExecutor.__init__` | Unit |
-| U25 | EP-D1 | `LocalExecutor.__init__` | Unit |
-| I1 | EP-S1 | `_connect` | Integration |
-| I2 | EP-S1 | `_connect` | Integration |
-| I3 | EP-S1 | `_connect` | Integration |
-| I4 | EP-S1 | `_disconnect` | Integration |
-| I5 | EP-S1 | `_disconnect` | Integration |
-| I6 | EP-S1 | `upload_file_via_sftp` | Integration |
-| I7 | EP-S1 | `_download_file_via_sftp` | Integration |
-| I8 | EP-O1 | `_list_remote_files` | Integration |
-| I9 | EP-S1 | `_delete_remote_path` | Integration |
-| I10 | EP-S1 | `build_singularity_image` | Integration |
-| I11 | EP-S1 | `execute_singularity_image` | Integration |
-| I12 | EP-O1 | `_collect_outputs_and_cleanup` | Integration |
-| I13 | EP-O1 | `_collect_outputs_and_cleanup` | Integration |
-| I14 | EP-O1 | `_collect_outputs_and_cleanup` | Integration |
-| I15 | EP-P2 | `poll_until_complete` | Integration |
-| I16 | EP-P1 | `poll_until_complete` | Integration |
-| I17 | EP-S2 | `poll_until_complete` | Integration |
-| I18 | EP-P1 | `poll_until_complete` | Integration |
-| I19 | EP-P1 | `poll_until_complete` | Integration |
-| I20 | EP-S1, EP-M2 | `CloudExecutor.execute` | Integration |
-| I21 | EP-S1 | `CloudExecutor.execute` | Integration |
-| I22 | EP-S1 | `CloudExecutor.execute` | Integration |
-| I23 | EP-S1 | `CloudExecutor.execute` | Integration |
-| I24 | EP-D1, EP-M1 | `LocalExecutor.execute` | Integration |
-| I25 | EP-D1 | `LocalExecutor.execute` | Integration |
-| I26 | EP-D1 | `LocalExecutor.execute` | Integration |
-| I27 | EP-D1 | `LocalExecutor.execute` | Integration |
-| I28 | EP-D1 | `LocalExecutor.execute` | Integration |
-| I29 | EP-D1 | `LocalExecutor.execute` | Integration |
-| I30 | EP-D1 | `LocalExecutor.execute` | Integration |
-| B1 | EP-S2 | `upload_file_via_sftp` | Bad Day |
-| B2 | EP-S2 | `_download_file_via_sftp` | Bad Day |
-| B3 | EP-S2 | `_list_remote_files` | Bad Day |
-| B4 | EP-S5 | `build_singularity_image` | Bad Day |
-| B5 | EP-S5 | `execute_singularity_image` | Bad Day |
-| B6 | EP-S4 | `_collect_outputs_and_cleanup` | Bad Day |
-| B7 | EP-D4 | `get_host_path_for_container_path` | Bad Day |
-| B8 | EP-D2 | `get_host_path_for_container_path` | Bad Day |
-| B9 | EP-D2 | `LocalExecutor.execute` | Bad Day |
+| I1 | EP-S1 | `upload_file_via_sftp` | Integration |
+| I2 | EP-S1 | `_download_file_via_sftp` | Integration |
+| I3 | EP-O1 | `_list_remote_files` | Integration |
+| I4 | EP-S1 | `_delete_remote_path` | Integration |
+| I5 | EP-S1 | `build_singularity_image` | Integration |
+| I6 | EP-S1 | `execute_singularity_image` | Integration |
+| I7 | EP-O1 | `_collect_outputs_and_cleanup` | Integration |
+| I8 | EP-O1 | `_collect_outputs_and_cleanup` | Integration |
+| I9 | EP-O1 | `_collect_outputs_and_cleanup` | Integration |
+| I10 | EP-P2 | `poll_until_complete` | Integration |
+| I11 | EP-P1 | `poll_until_complete` | Integration |
+| I12 | EP-P1 | `poll_until_complete` | Integration |
+| I13 | EP-P1 | `poll_until_complete` | Integration |
+| I14 | EP-S1, EP-M2 | `CloudExecutor.execute` | Integration |
+| I15 | EP-S1 | `CloudExecutor.execute` | Integration |
+| I16 | EP-S1 | `CloudExecutor.execute` | Integration |
+| I17 | EP-S1 | `CloudExecutor.execute` | Integration |
+| I18 | EP-D1 | `LocalExecutor.execute` | Integration |
+| I19 | EP-D1 | `LocalExecutor.execute` | Integration |
+| I20 | EP-D1 | `LocalExecutor.execute` | Integration |
+| B1 | EP-S5 | `build_singularity_image` | Bad Day |
+| B2 | EP-S5 | `execute_singularity_image` | Bad Day |
+| B3 | EP-S4 | `_collect_outputs_and_cleanup` | Bad Day |
+| B4 | EP-D4 | `get_host_path_for_container_path` | Bad Day |
+| B5 | EP-D2 | `get_host_path_for_container_path` | Bad Day |
+| B6 | EP-D2 | `LocalExecutor.execute` | Bad Day |
