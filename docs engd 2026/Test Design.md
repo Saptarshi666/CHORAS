@@ -1,10 +1,10 @@
 # CHORAS — Test Design Document
-## cloud_executor.py · local_executor.py
+## All Test Files · Full Coverage
 ### CHORAS Scalability Project - EngD 2026
 
-**Version:** 2.0
+**Version:** 6.0
 **Status:** Draft
-**Date:** 2026-03-13
+**Date:** 2026-03-17
 **Related Documents:** `Testing Strategy.md`, `Test Results.md`
 **Maintained by:** Test Manager
 
@@ -12,13 +12,8 @@
 
 ## 1. Purpose
 
-This document defines how each test case in `test_cloud_executor.py` and
-`test_local_executor.py` is designed. The test files are treated as the
-**specification** — they define the intended API and behaviour of
-`CloudExecutor` and `LocalExecutor`. Where the current implementation
-differs from what the tests expect, the implementation must be updated.
-
-For every test this document specifies:
+This document defines how every test case across all CHORAS test files is
+designed. For every test it specifies:
 
 - **What is being tested** — the component and behaviour under scrutiny
 - **Inputs** — the exact data, configuration, and system state passed in
@@ -29,889 +24,912 @@ For every test this document specifies:
 
 ---
 
-## 2. Required Implementation Changes
+## 2. Test Files and Scope
 
-The following changes to the production code are required before these
-tests can pass. They are derived directly from the test files and
-represent the intended API of each component.
-
-### 2.1 `CloudExecutor` — Required Changes
-
-| Change | Current | Required |
+| File | Component(s) Tested | Type |
 |---|---|---|
-| SSH connection management | `_ssh_session()` context manager, no persistent client | Add `ssh_client = None` attribute · Add `_connect()` and `_disconnect()` methods |
-| Upload method visibility | `_upload_file_via_sftp()` (private) | Rename to `upload_file_via_sftp()` (public) |
-| Build method visibility | `_build_singularity_image()` (private) | Rename to `build_singularity_image()` (public) |
-| Execute Singularity method | `_execute_singularity_image()` (private) | Rename to `execute_singularity_image()` (public) |
-| Poll method visibility | `_poll_until_complete()` (private) | Rename to `poll_until_complete()` (public) |
-| `execute()` return value | Returns `_CompletedJob()` only | Return `(job_id, _CompletedJob())` tuple |
-| `get_filenames()` missing keys | Raises `KeyError` when `msh_path` or `geo_path` absent | Handle gracefully — return `None` for absent keys |
-| `get_remote_file_path()` signature | `(remote_work_dir, image_name, task_id, filename)` — 4 args | `(image_name, task_id, filename)` — 3 args, construct path internally |
-
-### 2.2 `LocalExecutor` — Required Changes
-
-| Change | Current | Required |
-|---|---|---|
-| `execute()` return value | Returns `container` only | Return `(job_id, container)` tuple |
-| Job tracking | No `_jobs` attribute | Add `_jobs: dict` — stores containers keyed by `job_id` |
-| Container naming | Derived via `_get_container_name(method_config)` | Use `method_config["container_name"]` directly |
-| Job ID generation | None | Generate UUID4 per `execute()` call and return as first element of tuple |
+| `test_cloud_executor.py` | `CloudExecutor` — bad day via `execute()` | Integration |
+| `test_cloud_executor_final.py` | `CloudExecutor` — all internal methods | Unit + Integration |
+| `test_local_executor.py` | `LocalExecutor` — bad day via `execute()` | Integration |
+| `test_local_executor_final.py` | `LocalExecutor` — all internal methods | Unit + Integration |
+| `test_missing_cases.py` | Helper functions, `_CompletedJob`, `__init__` methods | Unit + Integration |
+| `test_executor_factory.py` | `executor_factory()` routing and edge cases | Unit + Integration |
+| `test_discovery_service.py` | `discovery_service.py` — all discovery functions | Unit |
+| `test_run_solver.py` | `simulation_service.py → run_solver()` | Unit + Integration |
+| `test_remaining_cases.py` | EP-DB4, EP-DS3, EP-M4 gap coverage | Unit + Integration |
 
 ---
 
 ## 3. Test Case Naming Convention
 
-| Prefix | Type |
-|---|---|
-| `U` | Unit test — pure logic, no external dependencies |
-| `I` | Integration test — happy path |
-| `B` | Bad day — failure and edge case scenarios |
+| Prefix | Type | Description |
+|---|---|---|
+| `U` | Unit | Pure logic, no external dependencies |
+| `I` | Integration | Happy path, real component interactions |
+| `B` | Bad Day | Failure and edge case scenarios |
+| `RS` | Run Solver | Tests for `simulation_service.run_solver()` |
+| `DS` | Discovery | Tests for `discovery_service.py` |
+| `EF` | Executor Factory | Tests for `executor_factory()` |
+| `REM` | Remaining | Gap coverage tests |
 
 ---
 
-## 4. `test_cloud_executor.py` — Test Design
+## 4. `test_cloud_executor.py` — Bad Day Tests
 
-### 4.1 Helper Function Tests
+**Purpose:** Verifies exception propagation through the full `execute()` flow
+when individual steps fail. These are the original bad day tests and remain
+unchanged.
+
+| Test | Partition | Scenario | Expected Output |
+|---|---|---|---|
+| `test_ssh_authentication_fails` | EP-S2 | `paramiko.AuthenticationException` during `connect()` | `SSHCommandError` matching `"SSH authentication failed"` |
+| `test_sftp_upload_tar_fails_halfway` | EP-S4 | `sftp.put` raises mid-transfer | `Exception` matching `"SFTP upload interrupted"` |
+| `test_build_singularity_image_fails` | EP-S5 | `_build_singularity_image` raises `"Disk full"` | `Exception` matching `"Disk full"` |
+| `test_remote_json_never_reaches_100` | EP-P5 | `_poll_until_complete` raises `"Timeout"` | `Exception` matching `"Timeout"` |
+| `test_remote_json_always_corrupt` | EP-P4 | `json.load` raises `JSONDecodeError` on every attempt | `Exception` matching `"Timeout"` via sleep mock |
+| `test_cancel_flag_created_before_polling` | EP-P6 | `_should_cancel` returns `True` before first download | `_CompletedJob` returned · `_download_file_via_sftp` never called |
+| `test_collect_outputs_and_cleanup_fails_mid_download` | EP-S4 | `_poll_until_complete` raises `"Network error"` | `Exception` matching `"Network error"` |
+| `test_build_fails_when_remote_sandbox_already_exists` | EP-S6 | `_build_singularity_image` raises `"sandbox already exists"` | `Exception` matching `"sandbox already exists"` |
 
 ---
 
-#### U1 — `get_filenames`: extracts msh and geo filenames
+## 5. `test_cloud_executor_final.py` — Full CloudExecutor Coverage
+
+### 5.1 `_parse_overall_progress` Tests (U1–U5)
+
+| Test | Partition | Input | Expected Output |
+|---|---|---|---|
+| U1 `test_multiple_results_returns_minimum` | EP-P1 | `[{80}, {40}, {60}]` | `40` |
+| U2 `test_single_result_at_100` | EP-P2 | `[{100}]` | `100` |
+| U3 `test_empty_results_list_returns_none` | EP-C5 | `{"results": []}` | `None` |
+| U4 `test_results_entry_missing_percentage_key` | EP-C5 | `[{"no_percentage": 1}]` | `0` |
+| U5 `test_results_is_not_a_list_returns_none` | EP-C5 | `{"results": "not_a_list"}` | `None` |
+
+---
+
+### 5.2 `get_filenames` Tests (U6–U8)
+
+---
+
+#### U6 — `get_filenames`: extracts msh and geo filenames and updates JSON in place
 
 | Field | Detail |
 |---|---|
 | **Component** | `cloud_executor.py → get_filenames()` |
 | **Partitions** | EP-C1 |
-| **What is being tested** | Full absolute paths for `msh_path` and `geo_path` are stripped to filenames only and returned as a tuple |
-| **Preconditions** | A valid JSON file exists at `json_path` with full paths for both keys |
-| **Input** | `json_path` pointing to `{"msh_path": "/full/path/to/mesh.msh", "geo_path": "/full/path/to/geo.geo"}` |
-| **Process** | 1. Write JSON to temp file · 2. Call `get_filenames(str(json_path))` · 3. Capture returned tuple · 4. Assert filenames |
-| **Expected Output** | Returns `("mesh.msh", "geo.geo")` |
-| **Pass Criteria** | `msh == "mesh.msh"` and `geo == "geo.geo"` |
+| **What is being tested** | Full absolute paths stripped to filenames only; JSON file updated in place |
+| **Input** | `{"msh_path": "/app/uploads/sim1/room.msh", "geo_path": "/app/uploads/sim1/room.geo"}` |
+| **Process** | 1. Write JSON to temp file · 2. Call `get_filenames()` · 3. Assert return values · 4. Re-read file and assert updated values |
+| **Expected Output** | Returns `("room.msh", "room.geo")` · JSON contains filenames only |
+| **Pass Criteria** | Both return values and both JSON values are filenames without path separators |
 
 ---
 
-#### U2 — `get_filenames`: updates JSON in place
-
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → get_filenames()` |
-| **Partitions** | EP-C1 |
-| **What is being tested** | The JSON file itself is overwritten with filename-only values after the call, so downstream components reading the file also get the stripped paths |
-| **Preconditions** | JSON file exists with full paths |
-| **Input** | `{"msh_path": "/full/path/mesh.msh", "geo_path": "/full/path/geo.geo"}` |
-| **Process** | 1. Write JSON to temp file · 2. Call `get_filenames(str(json_path))` · 3. Re-read the JSON file · 4. Assert updated values |
-| **Expected Output** | Re-read JSON: `data["msh_path"] == "mesh.msh"` and `data["geo_path"] == "geo.geo"` |
-| **Pass Criteria** | Both values in the re-read JSON are filenames without path separators |
-
----
-
-#### U3 — `get_filenames`: handles missing `msh_path` gracefully
+#### U7 — `get_filenames`: missing `msh_path` raises `KeyError`
 
 | Field | Detail |
 |---|---|
 | **Component** | `cloud_executor.py → get_filenames()` |
 | **Partitions** | EP-C5 |
-| **What is being tested** | When `msh_path` is absent from the JSON, the function does not raise — `msh_path` is treated as optional |
-| **Preconditions** | JSON file exists with only `geo_path` |
-| **Input** | `{"geo_path": "/path/geo.geo"}` |
-| **Process** | 1. Write JSON · 2. Call `get_filenames(str(json_path))` · 3. Assert `geo` return value |
-| **Expected Output** | No exception raised · `geo == "geo.geo"` |
-| **Pass Criteria** | No `KeyError` · `geo == "geo.geo"` |
-| **Implementation Note** | Requires `get_filenames()` to handle absent `msh_path` — return `None` for that value |
+| **What is being tested** | JSON missing `msh_path` → `KeyError` raised |
+| **Input** | `{"geo_path": "/app/uploads/sim1/room.geo"}` |
+| **Expected Output** | `KeyError` raised |
+| **Pass Criteria** | `pytest.raises(KeyError)` passes |
 
 ---
 
-#### U4 — `get_filenames`: handles missing `geo_path` gracefully
+#### U8 — `get_filenames`: missing `geo_path` raises `KeyError`
 
 | Field | Detail |
 |---|---|
 | **Component** | `cloud_executor.py → get_filenames()` |
 | **Partitions** | EP-C5 |
-| **What is being tested** | When `geo_path` is absent from the JSON, the function does not raise |
-| **Preconditions** | JSON file exists with only `msh_path` |
-| **Input** | `{"msh_path": "/path/mesh.msh"}` |
-| **Process** | 1. Write JSON · 2. Call `get_filenames(str(json_path))` · 3. Assert `msh` return value |
-| **Expected Output** | No exception raised · `msh == "mesh.msh"` |
-| **Pass Criteria** | No `KeyError` · `msh == "mesh.msh"` |
-| **Implementation Note** | Requires `get_filenames()` to handle absent `geo_path` — return `None` for that value |
+| **What is being tested** | JSON missing `geo_path` → `KeyError` raised |
+| **Input** | `{"msh_path": "/app/uploads/sim1/room.msh"}` |
+| **Expected Output** | `KeyError` raised |
+| **Pass Criteria** | `pytest.raises(KeyError)` passes |
 
 ---
 
-#### U5 — `get_local_file_path`: joins dirname and filename
+### 5.3 `_should_cancel` Tests
+
+| Test | Partition | Scenario | Expected |
+|---|---|---|---|
+| `test_returns_false_when_no_cancel_flag` | EP-P1 | Cancel flag file absent | `False` |
+| `test_returns_true_when_cancel_flag_exists` | EP-P6 | Cancel flag file present | `True` |
+
+---
+
+### 5.4 `_run_remote_command` Tests (I1–I4)
+
+---
+
+#### I1 — Successful command returns stdout
 
 | Field | Detail |
 |---|---|
-| **Component** | `cloud_executor.py → get_local_file_path()` |
-| **Partitions** | EP-C1 |
-| **What is being tested** | The function constructs a local path by joining the directory of the JSON path with a given filename |
-| **Preconditions** | None |
-| **Input** | `json_path = "/app/uploads/input.json"` · `filename = "mesh.msh"` |
-| **Process** | 1. Call `get_local_file_path("/app/uploads/input.json", "mesh.msh")` · 2. Assert result |
-| **Expected Output** | Returns `"/app/uploads/mesh.msh"` |
-| **Pass Criteria** | Result `== "/app/uploads/mesh.msh"` |
-
----
-
-#### U6 — `get_local_file_path`: works with nested directory
-
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → get_local_file_path()` |
-| **Partitions** | EP-C1 |
-| **What is being tested** | Correctly handles a deeply nested directory path |
-| **Preconditions** | None |
-| **Input** | `json_path = "/a/b/c/file.json"` · `filename = "out.csv"` |
-| **Process** | 1. Call `get_local_file_path("/a/b/c/file.json", "out.csv")` · 2. Assert result |
-| **Expected Output** | Returns `"/a/b/c/out.csv"` |
-| **Pass Criteria** | Result `== "/a/b/c/out.csv"` |
-
----
-
-#### U7 — `get_remote_file_path`: constructs correct remote path
-
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → get_remote_file_path()` |
-| **Partitions** | EP-C1 |
-| **What is being tested** | The function builds the correct remote sandbox path for a given file |
-| **Preconditions** | None |
-| **Input** | `image_name = "dg_image"` · `task_id = "abc-123"` · `filename = "input.json"` |
-| **Process** | 1. Call `get_remote_file_path("dg_image", "abc-123", "input.json")` · 2. Assert result |
-| **Expected Output** | Returns `"dg_image_sif_abc-123/app/input.json"` |
-| **Pass Criteria** | Result `== "dg_image_sif_abc-123/app/input.json"` |
-| **Implementation Note** | Requires signature change from 4 args to 3 — remove `remote_work_dir` parameter |
-
----
-
-### 4.2 `_CompletedJob` Tests
-
----
-
-#### U8 — `_CompletedJob.wait()`: returns zero status code
-
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → _CompletedJob.wait()` |
-| **Partitions** | EP-O1 |
-| **What is being tested** | `wait()` returns `{"StatusCode": 0}` so `simulation_service.py` can call it without error after a cloud job completes |
-| **Preconditions** | None |
-| **Input** | `_CompletedJob()` instance |
-| **Process** | 1. Instantiate `_CompletedJob()` · 2. Call `.wait()` · 3. Assert return value |
-| **Expected Output** | `{"StatusCode": 0}` |
-| **Pass Criteria** | Return value `== {"StatusCode": 0}` |
-
----
-
-#### U9 — `_CompletedJob.logs()`: returns bytes
-
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → _CompletedJob.logs()` |
-| **Partitions** | EP-O1 |
-| **What is being tested** | `logs()` returns a `bytes` object so callers can call `.decode()` on it without error |
-| **Preconditions** | None |
-| **Input** | `_CompletedJob()` instance |
-| **Process** | 1. Instantiate `_CompletedJob()` · 2. Call `.logs()` · 3. Assert type |
-| **Expected Output** | Returns an instance of `bytes` |
-| **Pass Criteria** | `isinstance(result, bytes)` is `True` |
-
----
-
-### 4.3 `CloudExecutor.__init__` Tests
-
----
-
-#### U10 — Stores all constructor parameters as attributes
-
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → CloudExecutor.__init__()` |
+| **Component** | `cloud_executor.py → _run_remote_command()` |
 | **Partitions** | EP-S1 |
-| **What is being tested** | All constructor arguments are stored as instance attributes with correct values |
-| **Preconditions** | None |
-| **Input** | `CloudExecutor("host", "user", "pass", "/key", "entry.py", "/work")` |
-| **Process** | 1. Instantiate with all params · 2. Assert each attribute value |
-| **Expected Output** | `hostname == "host"` · `username == "user"` · `password == "pass"` · `key_path == "/key"` · `entry_file == "entry.py"` · `remote_work_dir == "/work"` |
-| **Pass Criteria** | All six assertions pass |
+| **What is being tested** | Command exiting 0 returns stdout decoded as string |
+| **Input** | `exec_command` returns exit status `0`, stdout `b"hello world"` |
+| **Expected Output** | Returns `"hello world"` |
+| **Pass Criteria** | Return value `== "hello world"` |
 
 ---
 
-#### U11 — `ssh_client` initialised to `None`
+#### I2 — SSH authentication fails raises `SSHCommandError`
 
 | Field | Detail |
 |---|---|
-| **Component** | `cloud_executor.py → CloudExecutor.__init__()` |
-| **Partitions** | EP-S1 |
-| **What is being tested** | `ssh_client` is `None` on construction — no connection is opened until `_connect()` is called |
-| **Preconditions** | None |
-| **Input** | `CloudExecutor("host", "user")` |
-| **Process** | 1. Instantiate · 2. Assert `ssh_client` attribute |
-| **Expected Output** | `executor.ssh_client is None` |
-| **Pass Criteria** | Assertion passes |
-| **Implementation Note** | Requires `ssh_client = None` to be added to `__init__` |
+| **Component** | `cloud_executor.py → _run_remote_command()` |
+| **Partitions** | EP-S2 |
+| **What is being tested** | `paramiko.AuthenticationException` caught and re-raised as `SSHCommandError` |
+| **Input** | `exec_command` side effect: `paramiko.AuthenticationException()` |
+| **Expected Output** | `SSHCommandError` matching `"SSH authentication failed"` |
+| **Pass Criteria** | `pytest.raises(SSHCommandError, match="SSH authentication failed")` |
 
 ---
 
----
-
-### 4.4 SFTP Operation Tests
-
----
-
-#### I1 — `upload_file_via_sftp`: opens SFTP and calls `put`
+#### I3 — SSH timeout raises `SSHCommandError`
 
 | Field | Detail |
 |---|---|
-| **Component** | `cloud_executor.py → upload_file_via_sftp()` |
-| **Partitions** | EP-S1 |
-| **What is being tested** | A successful upload calls `sftp.put` with the correct local and remote paths, then closes the SFTP connection |
-| **Preconditions** | `executor.ssh_client` is a mock · local file exists |
-| **Input** | `local_path = tmp_path / "test.json"` · `remote_path = "remote/test.json"` |
-| **Process** | 1. Create local temp file · 2. Attach mock SSH client · 3. Call `upload_file_via_sftp(local, remote)` · 4. Assert `sftp.put` called with correct args · 5. Assert `sftp.close` called |
-| **Expected Output** | `sftp.put.assert_called_once_with(str(local_file), "remote/test.json")` · `sftp.close.assert_called_once()` |
-| **Pass Criteria** | Both mock assertions pass |
+| **Component** | `cloud_executor.py → _run_remote_command()` |
+| **Partitions** | EP-S3 |
+| **What is being tested** | `socket.timeout` caught and re-raised as `SSHCommandError` |
+| **Input** | `exec_command` side effect: `socket.timeout()` |
+| **Expected Output** | `SSHCommandError` matching `"SSH connection timed out"` |
+| **Pass Criteria** | `pytest.raises(SSHCommandError, match="SSH connection timed out")` |
 
 ---
 
+#### I4 — Non-zero exit status raises `SSHCommandError`
 
-#### I2 — `_download_file_via_sftp`: calls `sftp.get` with correct paths
+| Field | Detail |
+|---|---|
+| **Component** | `cloud_executor.py → _run_remote_command()` |
+| **Partitions** | EP-S1 (failure branch) |
+| **What is being tested** | Command exiting non-zero raises `SSHCommandError` with `"Command failed"` |
+| **Input** | Exit status `1`, stderr `b"permission denied"` |
+| **Expected Output** | `SSHCommandError` matching `"Command failed"` |
+| **Pass Criteria** | `pytest.raises(SSHCommandError, match="Command failed")` |
+
+---
+
+### 5.5 SFTP Operation Tests (I5–I6)
+
+| Test | Partition | Scenario | Expected |
+|---|---|---|---|
+| I5 `test_successful_upload_calls_sftp_put` | EP-S1 | Successful upload | `sftp.put` called with correct local and remote paths |
+| I6 `test_sftp_upload_fails_halfway_raises_exception` | EP-S4 | `sftp.put` raises mid-transfer | `Exception` matching `"SFTP upload interrupted"` propagates |
+
+---
+
+### 5.6 Singularity Image Tests (I7–I9)
+
+| Test | Partition | Scenario | Expected |
+|---|---|---|---|
+| I7 `test_successful_build_runs_correct_command` | EP-S1 | Successful build | Command contains `"singularity build"`, sandbox name, tar name |
+| I8 `test_disk_full_on_remote_raises_ssh_command_error` | EP-S5 | Remote disk full | `SSHCommandError` matching `"No space left on device"` |
+| I9 `test_sandbox_already_exists_raises_ssh_command_error` | EP-S6 | Sandbox already exists | `SSHCommandError` matching `"already exists"` |
+
+---
+
+### 5.7 `_execute_singularity_image` Tests (I10–I11)
+
+| Test | Partition | Scenario | Expected |
+|---|---|---|---|
+| I10 `test_launches_singularity_in_background` | EP-S1 | Successful launch | Command contains `"nohup"`, `"singularity exec"`, `"input.json"`, ends with `"&"` |
+| I11 `test_command_includes_entry_file` | EP-S1 | Entry file in command | `entry_file="DGinterface.py"` appears in command string |
+
+---
+
+### 5.8 `_poll_until_complete` Tests (I12–I16, B12–B13)
+
+---
+
+#### I12 — Progress reaches 100%, cleanup called, returns `True`
+
+| Field | Detail |
+|---|---|
+| **Component** | `cloud_executor.py → _poll_until_complete()` |
+| **Partitions** | EP-P1, EP-P2 |
+| **What is being tested** | JSON at 100% on first poll → `_collect_outputs_and_cleanup` called, `True` returned |
+| **Input** | `_download_file_via_sftp` writes `{"results": [{"percentage": 100}]}` |
+| **Expected Output** | `result is True` · `mock_cleanup.assert_called_once()` |
+| **Pass Criteria** | Both assertions pass |
+
+---
+
+#### I13 — JSON only written locally when progress changes
+
+| Field | Detail |
+|---|---|
+| **Component** | `cloud_executor.py → _poll_until_complete()` |
+| **Partitions** | EP-P1 |
+| **What is being tested** | Local JSON only written to disk when percentage actually changes |
+| **Input** | Progress sequence: `0% → 0% → 100%` |
+| **Expected Output** | `shutil.move` called exactly twice |
+| **Pass Criteria** | `len(written_files) == 2` |
+
+---
+
+#### I14 — Corrupt JSON recovers within retries
+
+| Field | Detail |
+|---|---|
+| **Component** | `cloud_executor.py → _poll_until_complete()` |
+| **Partitions** | EP-P3 |
+| **What is being tested** | Corrupt JSON on first attempt, valid on second → polling recovers |
+| **Input** | Attempt 1: corrupt JSON · Attempt 2: `percentage: 100` |
+| **Expected Output** | Returns `True` |
+| **Pass Criteria** | `result is True` |
+
+---
+
+#### I15 — Cancel flag before polling exits immediately
+
+| Field | Detail |
+|---|---|
+| **Component** | `cloud_executor.py → _poll_until_complete()` |
+| **Partitions** | EP-P6 |
+| **What is being tested** | Cancel flag present at entry → exits immediately, nothing downloaded |
+| **Input** | Cancel flag file present before call |
+| **Expected Output** | `_download_file_via_sftp` never called · `_collect_outputs_and_cleanup` never called |
+| **Pass Criteria** | Both `assert_not_called()` assertions pass |
+
+---
+
+#### I16 — Cancel flag mid-polling stops at next cycle
+
+| Field | Detail |
+|---|---|
+| **Component** | `cloud_executor.py → _poll_until_complete()` |
+| **Partitions** | EP-P7 |
+| **What is being tested** | Cancel flag created after cycle 1 → stops at cycle 2, outputs not downloaded |
+| **Input** | Cancel flag created during first download call |
+| **Expected Output** | Download called once · cleanup never called |
+| **Pass Criteria** | `call_count["n"] == 1` and `mock_cleanup.assert_not_called()` |
+
+---
+
+#### B12 — Progress stuck forever ⚠️ xfail — Known Bug
+
+| Field | Detail |
+|---|---|
+| **Component** | `cloud_executor.py → _poll_until_complete()` |
+| **Partitions** | EP-P5 |
+| **What is being tested** | Remote job crashes silently, progress always 50% → should raise `RuntimeError` after stall timeout |
+| **Expected Output** | `RuntimeError` matching `"timeout\|stall\|crashed\|forced exit"` |
+| **Pass Criteria** | **KNOWN BUG DEF-001** — `xfail` until stall-detection implemented |
+
+---
+
+#### B13 — JSON always corrupt — loops indefinitely ⚠️ xfail — Known Bug
+
+| Field | Detail |
+|---|---|
+| **Component** | `cloud_executor.py → _poll_until_complete()` |
+| **Partitions** | EP-P4 |
+| **What is being tested** | JSON corrupt on all retries every cycle → should raise after `POLL_MAX_FAILED_CYCLES` |
+| **Expected Output** | `RuntimeError` matching `"unreadable\|corrupt\|failed cycles\|forced exit"` |
+| **Pass Criteria** | **KNOWN BUG DEF-002** — `xfail` until `POLL_MAX_FAILED_CYCLES` implemented |
+
+---
+
+### 5.9 `_collect_outputs_and_cleanup` Tests (I17–I19, B3)
+
+| Test | Partition | Scenario | Expected |
+|---|---|---|---|
+| I17 `test_downloads_only_json_and_csv_ignores_others` | EP-O1 | Mixed remote dir | Only `.json` and `.csv` downloaded · returns `True` |
+| I18 `test_cleanup_called_after_successful_download` | EP-O1 | Successful download | `_cleanup` called with sandbox and tar paths |
+| I19 `test_sftp_download_failure_returns_false_no_cleanup` | EP-S4 | `sftp.get` raises | Returns `False` · `_cleanup` not called |
+
+---
+
+### 5.10 `execute()` Happy Path Tests (I14–I17 execute)
+
+| Test | Partition | Scenario | Expected |
+|---|---|---|---|
+| I14 `test_execute_returns_completed_job` | EP-S1, EP-M2 | Full successful `execute()` | Returns `_CompletedJob` |
+| I15 `test_execute_calls_poll_until_complete` | EP-S1 | `execute()` calls poll | `_poll_until_complete` called exactly once |
+| I16 `test_execute_uploads_tar_file` | EP-S1 | `execute()` uploads tar | Upload calls contain `"dg_image.tar"` |
+| I17 `test_execute_strips_tag_from_sandbox_name` | EP-S1 | Tag stripped | Sandbox name contains `"dg_image"` not `":latest"` |
+
+---
+
+### 5.11 `cancel()` Tests
+
+| Test | Partition | Scenario | Expected |
+|---|---|---|---|
+| I18 `test_cancel_kills_processes_and_cleans_up` | EP-S1 | Running job cancelled | `_kill_container_processes` and `_cleanup` both called |
+| I19 `test_cancel_constructs_correct_sandbox_name` | EP-S1 | Sandbox name correct | `mock_kill.call_args[0][0] == "dg_image_sif_abc-123"` |
+
+---
+
+## 6. `test_local_executor.py` — Original Bad Day Tests
+
+**Purpose:** Original bad day tests for `LocalExecutor.execute()`. Unchanged.
+
+| Test | Partition | Scenario | Expected |
+|---|---|---|---|
+| `test_docker_image_not_found` | EP-D2 | Docker image absent | `Exception` matching `"No such image"` |
+| `test_docker_socket_not_available` | EP-D2 | Docker daemon down | `Exception` matching `"Docker daemon not available"` |
+| `test_json_path_missing` | EP-C2 | `JSON_PATH` absent from env | Exception raised |
+| `test_no_matching_mount` | EP-D4 | No mount covers path | `RuntimeError` matching `"No mount found"` |
+| `test_container_exits_nonzero_obj_missing` | EP-D5 | Container exits non-zero | Container still returned — **known bug** |
+| `test_duplicate_container_name_conflict` | EP-D3 | Duplicate container name | `Exception` matching `"already in use"` |
+
+---
+
+## 7. `test_local_executor_final.py` — Full LocalExecutor Coverage
+
+### 7.1 `get_host_path_for_container_path` Tests
+
+| Test | Partition | Scenario | Expected |
+|---|---|---|---|
+| U18 `test_resolves_exact_mount_destination` | EP-D1 | Exact mount match | Returns `"/host/uploads"` (normalised) |
+| U19 `test_resolves_subdirectory_of_mount` | EP-D1 | Subdirectory of mount | Returns `"/host/uploads/subdir"` |
+| U20 `test_raises_when_docker_client_fails` | EP-D2 | Docker socket error | `Exception` matching `"Docker socket error"` |
+| U21 `test_uses_hostname_to_identify_container` | EP-D1 | Hostname used as container ID | `containers.get` called with `"abc123"` |
+| U22 `test_normalises_backslashes_to_forward_slashes` | EP-D1 | Windows paths normalised | No `\\` in result |
+| B4 `test_raises_when_no_mount_covers_path` | EP-D4 | No mount covers path | `RuntimeError` matching `"No mount found covering container path"` |
+| B5 `test_raises_when_docker_client_fails` | EP-D2 | Docker client raises | `Exception` matching `"Docker socket error"` |
+
+---
+
+### 7.2 `LocalExecutor.__init__` Tests
+
+| Test | Partition | Scenario | Expected |
+|---|---|---|---|
+| U23 `test_default_work_dir_from_env` | EP-D1 | `DOCKER_WORK_DIR` env set | `work_dir == "/custom/workdir"` |
+| U24 `test_default_work_dir_fallback` | EP-D1 | No env var set | `work_dir == "/app"` |
+| U25 `test_explicit_work_dir` | EP-D1 | Explicit `work_dir` arg | `work_dir == "/my/dir"` |
+
+---
+
+### 7.3 `LocalExecutor.execute()` — Happy Path Tests
+
+| Test | Partition | Scenario | Expected |
+|---|---|---|---|
+| I18 `test_returns_container_object` | EP-D1, EP-M2 | Valid inputs | `result is fake_container` |
+| I19 `test_passes_correct_image_to_containers_run` | EP-D1 | Image from method_config | `image == "my-sim-image:latest"` |
+| I20 `test_passes_env_to_containers_run` | EP-D1, EP-C1 | Env from sim_config | `environment == sim_config["env"]` |
+| `test_volume_mount_uses_resolved_host_path` | EP-D1 | Volume mount correct | `volumes["/host/uploads"]["bind"] == "/app/uploads"` · `mode == "rw"` |
+| `test_container_runs_detached` | EP-D1 | Detached mode | `detach is True` |
+| `test_de_method_on_simple_geometry` | EP-M1, EP-G1 | DE on simple geometry | Container returned · image `de_image:latest` |
+| `test_dg_method_on_moderate_geometry` | EP-M2, EP-G2 | DG on moderate geometry | Container returned · image `dg_image:latest` |
+| `test_new_method_on_complex_geometry` | EP-M3, EP-G3 | New method on complex geometry | Container returned · image `mynew_image:latest` |
+| `test_containers_run_called_exactly_once` | EP-D1 | One container started | `containers.run.assert_called_once()` |
+
+---
+
+### 7.4 `LocalExecutor.cancel()` Tests
+
+| Test | Partition | Scenario | Expected |
+|---|---|---|---|
+| I10 `test_cancel_kills_and_removes_running_container` | EP-D1 | Running container cancelled | `kill()` and `remove()` both called |
+| I11 `test_cancel_container_not_found_does_not_raise` | EP-D2 | Container already stopped | `NotFound` caught, no exception propagates |
+
+---
+
+## 8. `test_missing_cases.py` — Gap Coverage
+
+### 8.1 `get_local_file_path` Tests (U5–U6)
+
+| Test | Partition | Input | Expected |
+|---|---|---|---|
+| U5 `test_joins_dirname_and_filename` | EP-C1 | `json_path="/app/uploads/input.json"`, `filename="mesh.msh"` | `"/app/uploads/mesh.msh"` |
+| U6 `test_works_with_nested_directory` | EP-C1 | `json_path="/a/b/c/file.json"`, `filename="out.csv"` | `"/a/b/c/out.csv"` |
+
+---
+
+### 8.2 `get_remote_file_path` Test (U7)
+
+| Test | Partition | Input | Expected |
+|---|---|---|---|
+| U7 `test_constructs_correct_remote_path` | EP-C1 | `remote_work_dir="/tmp/remote"`, `image_name="dg_image"`, `task_id="abc-123"`, `filename="input.json"` | `"/tmp/remote/dg_image_sif_abc-123/app/input.json"` |
+
+---
+
+### 8.3 `_CompletedJob` Tests (U8–U9)
+
+| Test | Partition | Input | Expected |
+|---|---|---|---|
+| U8 `test_wait_returns_zero_status_code` | EP-O1 | `_CompletedJob()` instance | `{"StatusCode": 0}` |
+| U9 `test_logs_returns_bytes` | EP-O1 | `_CompletedJob()` instance | `isinstance(result, bytes) is True` |
+
+---
+
+### 8.4 `CloudExecutor.__init__` Tests (U10–U11)
+
+| Test | Partition | Input | Expected |
+|---|---|---|---|
+| U10 `test_stores_all_constructor_parameters` | EP-S1 | All six constructor args | Each attribute matches corresponding arg |
+| U11 `test_local_cancel_flag_path_initially_none` | EP-S1 | Minimal instantiation | `executor.local_cancel_flag_path is None` |
+
+---
+
+### 8.5 `_download_file_via_sftp` Test (I7)
 
 | Field | Detail |
 |---|---|
 | **Component** | `cloud_executor.py → _download_file_via_sftp()` |
 | **Partitions** | EP-S1 |
-| **What is being tested** | A successful download calls `sftp.get` with the remote and local paths and closes SFTP |
-| **Preconditions** | `executor.ssh_client` is a mock |
-| **Input** | `remote = "remote/file.json"` · `local = "/local/file.json"` |
-| **Process** | 1. Attach mock SSH client · 2. Call `_download_file_via_sftp(remote, local)` · 3. Assert mock calls |
-| **Expected Output** | `sftp.get.assert_called_once_with("remote/file.json", "/local/file.json")` · `sftp.close.assert_called_once()` |
+| **What is being tested** | Successful download calls `sftp.get` with correct remote and local paths |
+| **Input** | `remote="remote/file.json"`, `local="/local/file.json"` |
+| **Expected Output** | `sftp.get.assert_called_once_with("remote/file.json", "/local/file.json")` |
+| **Pass Criteria** | Assertion passes |
+
+---
+
+### 8.6 `_list_remote_files` Tests (I8)
+
+| Test | Partition | Scenario | Expected |
+|---|---|---|---|
+| I8 `test_returns_full_paths_and_excludes_hidden_files` | EP-O1 | Mixed dir with hidden files | Full paths for `.json` and `.csv` · `.hidden` excluded |
+| I8 boundary `test_returns_empty_list_for_empty_directory` | EP-O1 | Empty directory | Returns `[]` |
+
+---
+
+### 8.7 `_delete_remote_path` Tests (I9)
+
+| Test | Partition | Scenario | Expected |
+|---|---|---|---|
+| I9 `test_runs_rm_rf_command` | EP-S1 | Successful delete | `_run_remote_command` called with `"rm -rf sandbox/path"` |
+| I9 bad day `test_delete_propagates_ssh_error` | EP-S5 | SSH error during delete | `SSHCommandError` matching `"permission denied"` propagates |
+
+---
+
+### 8.8 `_execute_singularity_image` Bad Day Tests (B5)
+
+| Test | Partition | Scenario | Expected |
+|---|---|---|---|
+| B5 `test_raises_when_exec_command_fails` | EP-S5 | `_run_remote_command` raises | `SSHCommandError` matching `"exec failed"` propagates |
+| B5v `test_raises_when_ssh_connection_drops_mid_launch` | EP-S5 | SSH drops during launch | `SSHCommandError` matching `"SSH connection lost"` propagates |
+
+---
+
+## 9. `test_executor_factory.py`
+
+---
+
+#### EF1 — Invalid `resourceType` raises `ValueError`
+
+| Field | Detail |
+|---|---|
+| **Component** | `executors/factory.py → executor_factory()` |
+| **Partitions** | EP-E3 |
+| **What is being tested** | Invalid resource types (`"GPU"`, `None`, `999`, `""`) all raise `ValueError` — no silent default |
+| **Input** | Loop through `["GPU", None, 999, ""]` |
+| **Process** | For each type call `executor_factory(invalid_type)` and assert `ValueError` |
+| **Expected Output** | `ValueError` for every invalid type |
+| **Pass Criteria** | All four sub-tests pass |
+
+---
+
+#### EF2 — `discover_container_image` returns `None` → `CloudExecutor` still instantiated
+
+| Field | Detail |
+|---|---|
+| **Component** | `executors/factory.py → executor_factory()` |
+| **Partitions** | EP-M5 |
+| **What is being tested** | When `discover_container_image` returns `None`, `executor_factory` still instantiates `CloudExecutor` with `container_image=None` |
+| **Input** | `discover_container_image` mocked to return `None` · `ResourceType.CLOUD` |
+| **Expected Output** | `CloudExecutor` called once · `container_image=None` in call kwargs |
 | **Pass Criteria** | Both mock assertions pass |
 
 ---
 
-
-#### I3 — `_list_remote_files`: returns full paths, excludes hidden files
-
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → _list_remote_files()` |
-| **Partitions** | EP-O1 |
-| **What is being tested** | Returns full remote paths for all non-hidden files and excludes files starting with `.` |
-| **Preconditions** | `executor.ssh_client` mocked · `sftp.listdir_attr` returns three entries including one hidden |
-| **Input** | Directory entries: `output.json`, `data.csv`, `.hidden` |
-| **Process** | 1. Mock `listdir_attr` · 2. Call `_list_remote_files("sandbox/app")` · 3. Assert contents |
-| **Expected Output** | Result contains `"sandbox/app/output.json"` and `"sandbox/app/data.csv"` · does not contain `"sandbox/app/.hidden"` |
-| **Pass Criteria** | Both presence and absence assertions pass |
-
----
-
-
-#### I4 — `_delete_remote_path`: runs `rm -rf` command
+#### EF3 — `discover_entry_file` returns `None` → `CloudExecutor` gets `entry_file=None`
 
 | Field | Detail |
 |---|---|
-| **Component** | `cloud_executor.py → _delete_remote_path()` |
-| **Partitions** | EP-S1 |
-| **What is being tested** | `_delete_remote_path` executes `rm -rf {path}` on the remote via `exec_command` |
-| **Preconditions** | `executor.ssh_client` is a mock · `exec_command` returns exit status 0 |
-| **Input** | `remote_path = "sandbox/path"` |
-| **Process** | 1. Mock SSH client · 2. Call `_delete_remote_path("sandbox/path")` · 3. Assert `exec_command` call |
-| **Expected Output** | `exec_command` called with `"rm -rf sandbox/path"` |
-| **Pass Criteria** | `mock_ssh.exec_command.assert_called_once_with("rm -rf sandbox/path")` passes |
+| **Component** | `executors/factory.py → executor_factory()` |
+| **Partitions** | EP-M6 |
+| **What is being tested** | When `discover_entry_file` returns `None`, `CloudExecutor` instantiated with `entry_file=None` |
+| **Input** | `discover_entry_file` mocked to return `None` · `ResourceType.CLOUD` |
+| **Expected Output** | `CloudExecutor` called with `entry_file=None` |
+| **Pass Criteria** | Call args assertion passes |
 
 ---
 
-### 4.6 Singularity Image Tests
+## 10. `test_discovery_service.py`
 
 ---
 
-#### I5 — `build_singularity_image`: runs correct build command
+#### DS1 — `discover_methods` returns valid methods from real config
 
 | Field | Detail |
 |---|---|
-| **Component** | `cloud_executor.py → build_singularity_image()` |
-| **Partitions** | EP-S1 |
-| **What is being tested** | The correct `singularity build` command is issued, referencing the sandbox name and Docker archive |
-| **Preconditions** | `executor.ssh_client` mocked · `exec_command` returns exit 0 |
-| **Input** | `sandbox_name = "my_sandbox"` · `image_tar_name = "my_image.tar"` |
-| **Process** | 1. Attach mock SSH client · 2. Call `build_singularity_image("my_sandbox", "my_image.tar")` · 3. Inspect command string |
-| **Expected Output** | Command contains `"singularity build --sandbox my_sandbox"` and `"docker-archive://my_image.tar"` |
-| **Pass Criteria** | Both substrings present in `exec_command` call argument |
+| **Component** | `discovery_service.py → discover_methods()` |
+| **Partitions** | EP-DS1 |
+| **What is being tested** | Real `methods-config.json` read and filtered; DG and DE both present |
+| **Input** | Real config file at `METHODS_CONFIG_PATH` |
+| **Expected Output** | `len(methods) > 0` · `DG` and `DE` in discovered types |
+| **Pass Criteria** | All three assertions pass |
 
 ---
 
-#### B4 — `build_singularity_image`: raises on SSH error
+#### DS2 — `discover_method_names` extracts names correctly
 
 | Field | Detail |
 |---|---|
-| **Component** | `cloud_executor.py → build_singularity_image()` |
-| **Partitions** | EP-S5 |
-| **What is being tested** | When `exec_command` raises (e.g. SSH broken), the exception propagates out |
-| **Preconditions** | `executor.ssh_client` mocked · `exec_command` raises `Exception("SSH broken")` |
-| **Input** | `sandbox_name = "sandbox"` · `image_tar_name = "image.tar"` |
-| **Process** | 1. Set `exec_command` to raise · 2. Call `build_singularity_image(...)` · 3. Observe exception |
-| **Expected Output** | `Exception` raised matching `"SSH broken"` |
-| **Pass Criteria** | `pytest.raises(Exception, match="SSH broken")` passes |
+| **Component** | `discovery_service.py → discover_method_names()` |
+| **Partitions** | EP-DS1 |
+| **What is being tested** | `simulationType` values extracted from all valid methods |
+| **Input** | Real config file |
+| **Expected Output** | `"DG"` and `"DE"` both in returned names |
+| **Pass Criteria** | Both `assertIn` assertions pass |
 
 ---
 
-#### I6 — `execute_singularity_image`: runs `nohup` command in background
+#### DS3 — `discover_container_image` returns correct images
 
 | Field | Detail |
 |---|---|
-| **Component** | `cloud_executor.py → execute_singularity_image()` |
-| **Partitions** | EP-S1 |
-| **What is being tested** | The Singularity execution command is launched with `nohup`, uses `singularity exec`, passes the input JSON, and ends with `&` to run in background |
-| **Preconditions** | `executor.ssh_client` mocked · `exec_command` returns exit 0 |
-| **Input** | `sandbox_name = "sandbox"` · `input_json = "input.json"` |
-| **Process** | 1. Attach mock · 2. Call `execute_singularity_image("sandbox", "input.json")` · 3. Inspect command string |
-| **Expected Output** | Command contains `"nohup"` · contains `"singularity exec"` · contains `"input.json"` · ends with `"&"` |
-| **Pass Criteria** | All four string assertions pass |
+| **Component** | `discovery_service.py → discover_container_image()` |
+| **Partitions** | EP-DS1, EP-M5 |
+| **What is being tested** | Correct `containerImage` for DG and DE; all methods have `containerImage` |
+| **Input** | `simulation_type = "DG"` and `"DE"` |
+| **Expected Output** | `"dg_image:latest"` and `"de_image:latest"` · no methods with missing image |
+| **Pass Criteria** | Both specific and all-methods assertions pass |
 
 ---
 
-#### B5 — `execute_singularity_image`: raises on error
+#### DS4 — `discover_entry_file` returns correct entry files
 
 | Field | Detail |
 |---|---|
-| **Component** | `cloud_executor.py → execute_singularity_image()` |
-| **Partitions** | EP-S5 |
-| **What is being tested** | When `exec_command` raises, the exception propagates |
-| **Preconditions** | `executor.ssh_client` mocked · `exec_command` raises `Exception("exec failed")` |
-| **Input** | `sandbox_name = "sandbox"` · `input_json = "input.json"` |
-| **Process** | 1. Set `exec_command` to raise · 2. Call `execute_singularity_image(...)` · 3. Observe exception |
-| **Expected Output** | `Exception` raised matching `"exec failed"` |
-| **Pass Criteria** | `pytest.raises(Exception, match="exec failed")` passes |
+| **Component** | `discovery_service.py → discover_entry_file()` |
+| **Partitions** | EP-DS1, EP-M6 |
+| **What is being tested** | Correct `entryFile` for DG and DE; all methods have `entryFile` |
+| **Input** | `simulation_type = "DG"` and `"DE"` |
+| **Expected Output** | `"DGinterface.py"` and `"DEinterface.py"` · no missing entry files |
+| **Pass Criteria** | Both specific and all-methods assertions pass |
 
 ---
 
-### 4.7 `_parse_overall_progress` Tests
-
----
-
-#### U12 — Returns minimum percentage across multiple results
+#### DS5 — Config structure validation
 
 | Field | Detail |
 |---|---|
-| **Component** | `cloud_executor.py → CloudExecutor._parse_overall_progress()` |
-| **Partitions** | EP-P1 |
-| **What is being tested** | Returns the minimum value across all result entries so overall progress only reaches 100 when all sources complete |
-| **Input** | `{"results": [{"percentage": 80}, {"percentage": 60}, {"percentage": 100}]}` |
-| **Process** | Call `_parse_overall_progress(data)` · Assert return value |
-| **Expected Output** | `60` |
-| **Pass Criteria** | Return value `== 60` |
+| **Component** | `discovery_service.py → discover_methods()` |
+| **Partitions** | EP-DS4 |
+| **What is being tested** | Config is a list; each item has compulsory fields (`simulationType`, `label`, `containerImage`, `entryFile`) |
+| **Input** | Real config file |
+| **Expected Output** | `isinstance(methods, list) is True` · no missing compulsory fields |
+| **Pass Criteria** | Both structure assertions pass |
 
 ---
 
-#### U13 — Returns `None` when `results` key absent
+#### DS6 — Settings files exist if referenced
 
 | Field | Detail |
 |---|---|
-| **Component** | `cloud_executor.py → CloudExecutor._parse_overall_progress()` |
-| **Partitions** | EP-C5 |
-| **What is being tested** | Missing `results` key returns `None` without raising |
-| **Input** | `{}` |
+| **Component** | `discovery_service.py → discover_methods()` |
+| **Partitions** | EP-DS4 |
+| **What is being tested** | Any method referencing a `settings` file must have that file present |
+| **Input** | Real config file · `SETTINGS_FILE_FOLDER` path |
+| **Expected Output** | No missing settings files |
+| **Pass Criteria** | `missing_settings` list is empty |
+
+---
+
+## 11. `test_run_solver.py`
+
+---
+
+#### RS1 — `SimulationRun` not found → early return
+
+| Field | Detail |
+|---|---|
+| **Component** | `simulation_service.py → run_solver()` |
+| **Partitions** | EP-DB2 |
+| **What is being tested** | `SimulationRun.get(id)` returns `None` → early return, no DB commits |
+| **Input** | `session.query(SimulationRun).get(id)` returns `None` |
+| **Expected Output** | `session.commit` never called · `session.close` called once |
+| **Pass Criteria** | Both mock assertions pass |
+
+---
+
+#### RS2 — `Simulation` is `None` → crash caught internally
+
+| Field | Detail |
+|---|---|
+| **Component** | `simulation_service.py → run_solver()` |
+| **Partitions** | EP-DB3 |
+| **What is being tested** | `Simulation` query returns `None` → `AttributeError` caught internally |
+| **Input** | `SimulationRun` found · `Simulation` query returns `None` |
+| **Expected Output** | Exception caught · `session.close` called |
+| **Pass Criteria** | `mock_session.close.assert_called_once()` |
+
+---
+
+#### RS3 — `solverSettings=None` → `Error` status
+
+| Field | Detail |
+|---|---|
+| **Component** | `simulation_service.py → run_solver()` |
+| **Partitions** | EP-C6 |
+| **What is being tested** | `solverSettings=None` causes `KeyError` → caught → both statuses set to `Error` |
+| **Input** | `simulation.solverSettings = None` |
+| **Expected Output** | `mock_simrun.status == Status.Error` · `mock_simulation.status == Status.Error` |
+| **Pass Criteria** | Both status assertions pass |
+
+---
+
+#### RS4 — Unreadable JSON → `Error` status
+
+| Field | Detail |
+|---|---|
+| **Component** | `simulation_service.py → run_solver()` |
+| **Partitions** | EP-C4 |
+| **What is being tested** | JSON file with no read permissions raises `PermissionError` → caught → `Error` status |
+| **Input** | `os.chmod(json_path, 0o000)` |
+| **Expected Output** | `mock_simrun.status == Status.Error` |
+| **Pass Criteria** | Status assertion passes |
+
+---
+
+#### RS5 — Non-existent JSON path → `Error` status
+
+| Field | Detail |
+|---|---|
+| **Component** | `simulation_service.py → run_solver()` |
+| **Partitions** | EP-C3 |
+| **What is being tested** | `JSON_PATH` points to a file that does not exist → `FileNotFoundError` caught → `Error` status |
+| **Input** | `json_path = "/tmp/does_not_exist_at_all.json"` |
+| **Expected Output** | `mock_simrun.status == Status.Error` |
+| **Pass Criteria** | Status assertion passes |
+
+---
+
+#### RS6 — Malformed `solverSettings` → `Error` status
+
+| Field | Detail |
+|---|---|
+| **Component** | `simulation_service.py → run_solver()` |
+| **Partitions** | EP-C7 |
+| **What is being tested** | `solverSettings` is not `None` but missing `simulationSettings` key → `KeyError` caught → `Error` status. Distinct from RS3 where `solverSettings` is `None` entirely |
+| **Input** | `simulation.solverSettings = {"bad_key": "unexpected_structure"}` |
+| **Expected Output** | `mock_simrun.status == Status.Error` · `mock_simulation.status == Status.Error` |
+| **Pass Criteria** | Both status assertions pass |
+
+---
+
+#### RS7 — Auralization fails after XLSX written → orphaned export
+
+| Field | Detail |
+|---|---|
+| **Component** | `simulation_service.py → run_solver()` |
+| **Partitions** | EP-O7 |
+| **What is being tested** | `auralization_calculation` raises after XLSX already written → `Error` status but Export record remains |
+| **Input** | `ExportHelper` returns `True` · `auralization_calculation` raises |
+| **Expected Output** | `Status.Error` · `session.add` called |
+| **Pass Criteria** | Both assertions pass |
+
+---
+
+#### RS8 — XLSX export returns `False` → `Error` status
+
+| Field | Detail |
+|---|---|
+| **Component** | `simulation_service.py → run_solver()` |
+| **Partitions** | EP-O4 |
+| **What is being tested** | `ExportHelper.parse_json_file_to_xlsx_file()` returns `False` → `raise "string"` is invalid Python → `TypeError` → caught → `Error` status |
+| **Input** | `ExportHelper.parse_json_file_to_xlsx_file` returns `False` |
+| **Expected Output** | `mock_simrun.status == Status.Error` |
+| **Pass Criteria** | Status assertion passes |
+| **Notes** | Documents known bug: `raise "string"` is invalid Python |
+
+---
+
+#### RS9 — Container exits non-zero → wrongly marked `Completed`
+
+| Field | Detail |
+|---|---|
+| **Component** | `simulation_service.py → run_solver()` |
+| **Partitions** | EP-D5 |
+| **What is being tested** | `container.wait()` returns `StatusCode: 1` but is ignored → simulation marked `Completed` |
+| **Input** | `container.wait()` returns `1` |
+| **Expected Output** | `mock_simrun.status == Status.Completed` (documents the bug) |
+| **Pass Criteria** | Assertion passes — intentionally asserts incorrect behaviour |
+| **Notes** | **KNOWN BUG DEF-003** — should be `Error`, not `Completed` |
+
+---
+
+## 12. `test_remaining_cases.py`
+
+---
+
+#### REM1 — DB commit failure → rollback called, session closed
+
+| Field | Detail |
+|---|---|
+| **Component** | `simulation_service.py → run_solver()` |
+| **Partitions** | EP-DB4 |
+| **What is being tested** | `session.commit()` raises `SQLAlchemyError` → outer handler rolls back and closes session cleanly |
+| **Input** | `session.commit` side effect: `SQLAlchemyError("DB commit failed")` |
+| **Process** | 1. Mock session with valid SimulationRun and Simulation · 2. Mock `commit` to raise · 3. Call `run_solver()` · 4. Assert `rollback` and `close` called |
+| **Expected Output** | `session.rollback()` called · `session.close()` called once |
+| **Pass Criteria** | Both mock assertions pass |
+
+---
+
+#### REM2 — DB commit failure does not propagate
+
+| Field | Detail |
+|---|---|
+| **Component** | `simulation_service.py → run_solver()` |
+| **Partitions** | EP-DB4 |
+| **What is being tested** | `SQLAlchemyError` from `session.commit()` caught internally — Celery worker does not crash |
+| **Input** | `session.commit` raises `SQLAlchemyError` |
+| **Expected Output** | `run_solver()` returns normally without raising |
+| **Pass Criteria** | No exception propagates out of `run_solver()` |
+
+---
+
+#### REM3 — Removed method no longer appears in discovery
+
+| Field | Detail |
+|---|---|
+| **Component** | `discovery_service.py → discover_methods()` |
+| **Partitions** | EP-DS3 |
+| **What is being tested** | Config updated to remove a method → subsequent discovery call does not return it |
+| **Input** | Config 1: DG, DE, MyNewMethod · Config 2: DG, DE only (mocked via `builtins.open`) |
+| **Process** | 1. Mock `open()` to return config with MyNewMethod · 2. Assert present · 3. Mock `open()` to return config without MyNewMethod · 4. Assert absent |
+| **Expected Output** | `"MyNewMethod"` present in first call · absent in second call |
+| **Pass Criteria** | Both `assertIn` / `assertNotIn` assertions pass |
+
+---
+
+#### REM4 — Unknown method returns `None` from `discover_container_image`
+
+| Field | Detail |
+|---|---|
+| **Component** | `discovery_service.py → discover_container_image()` |
+| **Partitions** | EP-M4 |
+| **What is being tested** | Method not in any config → `discover_container_image` returns `None` |
+| **Input** | `simulation_type = "UnknownMethod"` |
 | **Expected Output** | `None` |
-| **Pass Criteria** | Return value is `None` |
+| **Pass Criteria** | `result is None` |
 
 ---
 
-#### U14 — Returns `None` when results is empty list
+#### REM5 — Unknown method returns `None` from `discover_entry_file`
 
 | Field | Detail |
 |---|---|
-| **Component** | `cloud_executor.py → CloudExecutor._parse_overall_progress()` |
-| **Partitions** | EP-C5 |
-| **What is being tested** | Empty results list returns `None` |
-| **Input** | `{"results": []}` |
+| **Component** | `discovery_service.py → discover_entry_file()` |
+| **Partitions** | EP-M4, EP-M6 |
+| **What is being tested** | Method not in any config → `discover_entry_file` returns `None` |
+| **Input** | `simulation_type = "UnknownMethod"` |
 | **Expected Output** | `None` |
-| **Pass Criteria** | Return value is `None` |
+| **Pass Criteria** | `result is None` |
 
 ---
 
-#### U15 — Defaults missing `percentage` to `0`
+## 13. Known Bugs Documented by Tests
 
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → CloudExecutor._parse_overall_progress()` |
-| **Partitions** | EP-C5 |
-| **What is being tested** | An entry missing `percentage` key defaults to `0` via `.get("percentage", 0)` and is included in the minimum calculation |
-| **Input** | `{"results": [{"percentage": 50}, {}]}` |
-| **Expected Output** | `0` (minimum of 50 and 0) |
-| **Pass Criteria** | Return value `== 0` |
-
----
-
-#### U16 — Returns `100` when all results complete
-
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → CloudExecutor._parse_overall_progress()` |
-| **Partitions** | EP-P2 |
-| **What is being tested** | Returns `100` only when every entry is at 100% |
-| **Input** | `{"results": [{"percentage": 100}, {"percentage": 100}]}` |
-| **Expected Output** | `100` |
-| **Pass Criteria** | Return value `== 100` |
-
----
-
-#### U17 — Returns `None` on malformed data
-
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → CloudExecutor._parse_overall_progress()` |
-| **Partitions** | EP-C5 |
-| **What is being tested** | When `results` is a string instead of a list, returns `None` without crashing |
-| **Input** | `{"results": "bad"}` |
-| **Expected Output** | `None` |
-| **Pass Criteria** | Return value is `None` · no exception raised |
-
----
-
-### 4.8 `_collect_outputs_and_cleanup` Tests
-
----
-
-#### I7 — Downloads only `.json` and `.csv`, returns `True`
-
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → _collect_outputs_and_cleanup()` |
-| **Partitions** | EP-O1 |
-| **What is being tested** | From a mixed remote directory, only files with extensions in `_OUTPUT_EXTENSIONS` are downloaded. Returns `True` on success |
-| **Preconditions** | `_list_remote_files` mocked · SFTP mocked · `_delete_remote_path` mocked |
-| **Input** | Remote files: `output.json`, `data.csv`, `script.py`, `mesh.msh` |
-| **Process** | 1. Mock `_list_remote_files` to return all four · 2. Call `_collect_outputs_and_cleanup(...)` · 3. Inspect `sftp.get` call arguments · 4. Assert return value |
-| **Expected Output** | `sftp.get` called for `output.json` and `data.csv` only · returns `True` |
-| **Pass Criteria** | `script.py` and `mesh.msh` absent from call args · `result is True` |
-
----
-
-#### I8 — Deletes sandbox and tar after download
-
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → _collect_outputs_and_cleanup()` |
-| **Partitions** | EP-O1 |
-| **What is being tested** | After outputs are downloaded, both the sandbox directory and tar file are deleted from the remote host |
-| **Preconditions** | `_list_remote_files` returns empty list · `_delete_remote_path` mocked |
-| **Input** | `remote_sandbox_path = "sandbox"` · `remote_tar_path = "image.tar"` |
-| **Process** | 1. Mock dependencies · 2. Call `_collect_outputs_and_cleanup(...)` · 3. Assert delete calls |
-| **Expected Output** | `_delete_remote_path` called with `"sandbox"` and with `"image.tar"` |
-| **Pass Criteria** | Both `assert_any_call` assertions pass |
-
----
-
-#### I9 — Skips tar deletion when `remote_tar_path` is `None`
-
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → _collect_outputs_and_cleanup()` |
-| **Partitions** | EP-O1 |
-| **What is being tested** | When no tar path is provided, only the sandbox is deleted — no attempt to delete `None` |
-| **Input** | `remote_tar_path = None` |
-| **Process** | 1. Mock `_delete_remote_path` · 2. Call with `remote_tar_path=None` · 3. Inspect delete call arguments |
-| **Expected Output** | `"image.tar"` never passed to `_delete_remote_path` |
-| **Pass Criteria** | `"image.tar"` absent from all delete call arguments |
-
----
-
-#### B6 — Returns `False` on error
-
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → _collect_outputs_and_cleanup()` |
-| **Partitions** | EP-S4 |
-| **What is being tested** | When an exception is raised (e.g. SFTP failure), the method catches it and returns `False` instead of propagating — sandbox may not be cleaned up |
-| **Preconditions** | `_list_remote_files` mocked to raise `Exception("SFTP error")` |
-| **Input** | `_list_remote_files` side effect: `Exception("SFTP error")` |
-| **Process** | 1. Mock to raise · 2. Call `_collect_outputs_and_cleanup(...)` · 3. Assert return value |
-| **Expected Output** | Returns `False` |
-| **Pass Criteria** | `result is False` |
-
----
-
-### 4.9 `poll_until_complete` Tests
-
----
-
-#### I10 — Returns `True` when job completes on first poll
-
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → poll_until_complete()` |
-| **Partitions** | EP-P2 |
-| **What is being tested** | When `percentage == 100` on the first download, `_collect_outputs_and_cleanup` is called and `True` is returned |
-| **Preconditions** | `_download_file_via_sftp` writes JSON with `percentage: 100` · `_collect_outputs_and_cleanup` mocked to return `True` |
-| **Input** | Remote JSON: `{"results": [{"percentage": 100}]}` |
-| **Process** | 1. Patch `time.sleep` · 2. Mock `_connect`, `_disconnect`, `_download_file_via_sftp`, `_collect_outputs_and_cleanup` · 3. Call `poll_until_complete(...)` · 4. Assert result and cleanup call |
-| **Expected Output** | Returns `True` · `_collect_outputs_and_cleanup` called once |
-| **Pass Criteria** | `result is True` · `mock_cleanup.assert_called_once()` |
-| **Implementation Note** | Requires `poll_until_complete()` public method — rename from `_poll_until_complete()` |
-
----
-
-#### I11 — Polls multiple cycles before completion
-
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → poll_until_complete()` |
-| **Partitions** | EP-P1 |
-| **What is being tested** | The polling loop iterates multiple cycles and calls `time.sleep` between them |
-| **Preconditions** | Progress sequence: `30% → 60% → 100%` |
-| **Input** | Cycles 1–2: increasing progress · Cycle 3+: `100%` |
-| **Process** | 1. Patch `time.sleep` · 2. Define `fake_download` with increasing percentages · 3. Run `poll_until_complete` · 4. Assert sleep call count |
-| **Expected Output** | `time.sleep` called at least twice |
-| **Pass Criteria** | `mock_sleep.call_count >= 2` |
-
----
-
-#### I13 — Applies backoff after fast phase cycles
-
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → poll_until_complete()` |
-| **Partitions** | EP-P1 |
-| **What is being tested** | After `POLL_FAST_PHASE_CYCLES` cycles, the sleep interval grows beyond `POLL_INTERVAL_MIN` |
-| **Preconditions** | Progress stuck at `50%` for first `POLL_FAST_PHASE_CYCLES + 1` cycles, then `100%` |
-| **Input** | Cycles 1–6: `percentage = 50` · Cycle 7+: `percentage = 100` |
-| **Process** | 1. Patch `time.sleep` · 2. Run polling · 3. Inspect all sleep call values |
-| **Expected Output** | At least one sleep value greater than `POLL_INTERVAL_MIN` |
-| **Pass Criteria** | `any(s > POLL_INTERVAL_MIN for s in sleep_intervals)` |
-
----
-
-#### I14 — Local JSON written only when progress changes
-
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → poll_until_complete()` |
-| **Partitions** | EP-P1 |
-| **What is being tested** | The local JSON file is only written to disk when the percentage changes — no unnecessary writes when progress is unchanged |
-| **Preconditions** | Cycle 1: `50%` · Cycle 2: `50%` (no write) · Cycle 3: `100%` |
-| **Process** | 1. Run `poll_until_complete` · 2. Assert local JSON exists after completion |
-| **Expected Output** | Local JSON file exists |
-| **Pass Criteria** | `local_json.exists() is True` |
-
----
-
-### 4.10 `execute` Tests
-
----
-
-#### I15 — Returns job ID and `_CompletedJob`
-
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → CloudExecutor.execute()` |
-| **Partitions** | EP-S1, EP-M2 |
-| **What is being tested** | `execute()` completes the full workflow and returns a valid UUID job ID and a `_CompletedJob` instance |
-| **Preconditions** | All SSH methods mocked · `get_filenames` mocked |
-| **Input** | `method_config["container_image"] = "dg_image:latest"` · valid `sim_config` |
-| **Process** | 1. Mock all internal methods · 2. Call `execute(method_config, sim_config)` · 3. Unpack `(job_id, completed)` · 4. Assert types |
-| **Expected Output** | `job_id` is a 36-character UUID string · `completed` is a `_CompletedJob` instance |
-| **Pass Criteria** | `len(job_id) == 36` · `isinstance(completed, _CompletedJob)` |
-| **Implementation Note** | Requires `execute()` to return `(job_id, _CompletedJob())` tuple |
-
----
-
-#### I16 — Uploads tar and JSON files
-
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → CloudExecutor.execute()` |
-| **Partitions** | EP-S1 |
-| **What is being tested** | `execute()` uploads the Docker tar and input JSON to the remote host |
-| **Input** | `method_config["container_image"] = "dg_image:latest"` |
-| **Process** | 1. Mock all SSH methods · 2. Call `execute()` · 3. Inspect `upload_file_via_sftp` call arguments |
-| **Expected Output** | Upload calls include `"dg_image.tar"` and `"input.json"` |
-| **Pass Criteria** | Both substrings present across upload call args |
-
----
-
-#### I17 — Calls `poll_until_complete`
-
-| Field | Detail |
-|---|---|
-| **Component** | `cloud_executor.py → CloudExecutor.execute()` |
-| **Partitions** | EP-S1 |
-| **What is being tested** | `execute()` calls `poll_until_complete` exactly once to wait for the job to finish |
-| **Process** | 1. Mock all SSH methods · 2. Call `execute()` · 3. Assert `poll_until_complete` called |
-| **Expected Output** | `poll_until_complete.assert_called_once()` |
-| **Pass Criteria** | Assertion passes |
-
----
-
-
-## 5. `test_local_executor.py` — Test Design
-
-### 5.1 `get_host_path_for_container_path` Tests
-
----
-
-#### U18 — Resolves exact mount destination to host path
-
-| Field | Detail |
-|---|---|
-| **Component** | `local_executor.py → get_host_path_for_container_path()` |
-| **Partitions** | EP-D1 |
-| **What is being tested** | A container path that exactly matches a mount destination is resolved to the corresponding host source path |
-| **Preconditions** | Docker client mocked · container mount: source `/host/uploads`, destination `/app/uploads` |
-| **Input** | `container_path = "/app/uploads"` · `socket.gethostname` mocked to `"my-container-id"` |
-| **Process** | 1. Mock `docker.from_env()` and `containers.get()` · 2. Patch `socket.gethostname` · 3. Call `get_host_path_for_container_path("/app/uploads")` · 4. Assert result |
-| **Expected Output** | Returns `"/host/uploads"` |
-| **Pass Criteria** | Result `== "/host/uploads"` |
-
----
-
-#### U19 — Resolves subdirectory of mount
-
-| Field | Detail |
-|---|---|
-| **Component** | `local_executor.py → get_host_path_for_container_path()` |
-| **Partitions** | EP-D1 |
-| **What is being tested** | A path under a mount destination is resolved by computing the relative suffix and appending to host source |
-| **Input** | `container_path = "/app/uploads/subdir"` · same mount as U18 |
-| **Process** | Same as U18 with subdirectory path |
-| **Expected Output** | Returns `"/host/uploads/subdir"` |
-| **Pass Criteria** | Result `== "/host/uploads/subdir"` |
-
----
-
-#### B7 — Raises `RuntimeError` when no mount covers path
-
-| Field | Detail |
-|---|---|
-| **Component** | `local_executor.py → get_host_path_for_container_path()` |
-| **Partitions** | EP-D4 |
-| **What is being tested** | When no mount covers the requested container path, `RuntimeError` is raised with `"No mount found covering container path"` |
-| **Input** | `container_path = "/some/unmounted/path"` · mount only covers `/app/uploads` |
-| **Process** | 1. Mock Docker with unrelated mount · 2. Call with unmounted path · 3. Observe exception |
-| **Expected Output** | `RuntimeError` raised matching `"No mount found covering container path"` |
-| **Pass Criteria** | `pytest.raises(RuntimeError, match="No mount found covering container path")` passes |
-
----
-
-#### B8 — Raises when Docker client fails
-
-| Field | Detail |
-|---|---|
-| **Component** | `local_executor.py → get_host_path_for_container_path()` |
-| **Partitions** | EP-D2 |
-| **What is being tested** | If `containers.get()` raises (e.g. Docker daemon down), the exception propagates out |
-| **Input** | `containers.get` side effect: `Exception("Docker socket error")` |
-| **Process** | 1. Mock to raise · 2. Call function · 3. Observe exception |
-| **Expected Output** | `Exception` raised matching `"Docker socket error"` |
-| **Pass Criteria** | `pytest.raises(Exception, match="Docker socket error")` passes |
-
----
-
-#### U20 — Uses hostname to identify container
-
-| Field | Detail |
-|---|---|
-| **Component** | `local_executor.py → get_host_path_for_container_path()` |
-| **Partitions** | EP-D1 |
-| **What is being tested** | `containers.get()` is called with the current machine hostname which identifies the container |
-| **Input** | `socket.gethostname` mocked to return `"abc123"` |
-| **Process** | 1. Mock Docker · 2. Patch hostname · 3. Call function · 4. Assert `containers.get` argument |
-| **Expected Output** | `containers.get` called with `"abc123"` |
-| **Pass Criteria** | `mock_docker_client.containers.get.assert_called_once_with("abc123")` |
-
----
-
-#### U21 — Normalises backslashes to forward slashes
-
-| Field | Detail |
-|---|---|
-| **Component** | `local_executor.py → get_host_path_for_container_path()` |
-| **Partitions** | EP-D1 |
-| **What is being tested** | Windows-style backslashes in the host source path are normalised to forward slashes |
-| **Input** | Mount source: `"C:\\Users\\host\\uploads"` · destination: `"/app/uploads"` |
-| **Process** | 1. Mock Docker with Windows-style source path · 2. Call function · 3. Assert no backslashes |
-| **Expected Output** | Result contains no `"\\"` characters |
-| **Pass Criteria** | `"\\" not in result` |
-
----
-
-### 5.2 `LocalExecutor.__init__` Tests
-
----
-
-#### U22 — Uses `DOCKER_WORK_DIR` environment variable
-
-| Field | Detail |
-|---|---|
-| **Component** | `local_executor.py → LocalExecutor.__init__()` |
-| **Partitions** | EP-D1 |
-| **What is being tested** | When `work_dir` is not provided, `DOCKER_WORK_DIR` env var is used as the working directory |
-| **Input** | `DOCKER_WORK_DIR = "/custom/workdir"` set in environment · `LocalExecutor()` with no args |
-| **Process** | 1. Set env var · 2. Instantiate · 3. Assert `work_dir` |
-| **Expected Output** | `executor.work_dir == "/custom/workdir"` |
-| **Pass Criteria** | Assertion passes |
-
----
-
-#### U23 — Falls back to `/app` when env var absent
-
-| Field | Detail |
-|---|---|
-| **Component** | `local_executor.py → LocalExecutor.__init__()` |
-| **Partitions** | EP-D1 |
-| **What is being tested** | When neither `work_dir` argument nor `DOCKER_WORK_DIR` env var is set, defaults to `/app` |
-| **Input** | No `DOCKER_WORK_DIR` · `LocalExecutor()` with no args |
-| **Process** | 1. Clear env var · 2. Instantiate · 3. Assert `work_dir` |
-| **Expected Output** | `executor.work_dir == "/app"` |
-| **Pass Criteria** | Assertion passes |
-
----
-
-#### U24 — Uses explicit `work_dir` argument
-
-| Field | Detail |
-|---|---|
-| **Component** | `local_executor.py → LocalExecutor.__init__()` |
-| **Partitions** | EP-D1 |
-| **What is being tested** | An explicitly passed `work_dir` overrides the environment variable |
-| **Input** | `LocalExecutor(work_dir="/my/dir")` |
-| **Process** | 1. Instantiate with explicit arg · 2. Assert `work_dir` |
-| **Expected Output** | `executor.work_dir == "/my/dir"` |
-| **Pass Criteria** | Assertion passes |
-
----
-
-
-### 5.3 `LocalExecutor.execute` Tests
-
----
-
-#### I20 — Stores job in `_jobs` dict
-
-| Field | Detail |
-|---|---|
-| **Component** | `local_executor.py → LocalExecutor.execute()` |
-| **Partitions** | EP-D1 |
-| **What is being tested** | After `execute()` returns, the container is stored in `executor._jobs` keyed by the returned `job_id` |
-| **Preconditions** | Docker and resolver mocked |
-| **Input** | Valid `method_config` and `sim_config` |
-| **Process** | 1. Mock dependencies · 2. Call `execute()` · 3. Assert `job_id in executor._jobs` · 4. Assert `executor._jobs[job_id] is fake_container` |
-| **Expected Output** | Container stored under `job_id` in `_jobs` |
-| **Pass Criteria** | Both key existence and value identity assertions pass |
-| **Implementation Note** | Requires `_jobs[job_id] = container` inside `execute()` |
-
----
-
-#### I21 — Passes correct image and env to `containers.run`
-
-| Field | Detail |
-|---|---|
-| **Component** | `local_executor.py → LocalExecutor.execute()` |
-| **Partitions** | EP-D1 |
-| **What is being tested** | `containers.run` receives the correct `image` from `method_config` and `environment` from `sim_config` |
-| **Input** | `method_config["container_image"] = "my-sim-image:latest"` · `sim_config["env"] = {"JSON_PATH": "..."}` |
-| **Process** | 1. Mock Docker · 2. Call `execute()` · 3. Inspect `containers.run` kwargs |
-| **Expected Output** | `image == "my-sim-image:latest"` · `environment == {"JSON_PATH": "..."}` |
-| **Pass Criteria** | Both kwargs assertions pass |
-
----
-
-#### I22 — Volume mount uses resolved host path
-
-| Field | Detail |
-|---|---|
-| **Component** | `local_executor.py → LocalExecutor.execute()` |
-| **Partitions** | EP-D1 |
-| **What is being tested** | The volume mount uses the host path resolved by `get_host_path_for_container_path`, bound to the container path in read-write mode |
-| **Preconditions** | `get_host_path_for_container_path` mocked to return `"/host/uploads"` |
-| **Input** | `sim_config["env"]["JSON_PATH"] = "/app/uploads/input.json"` |
-| **Process** | 1. Mock resolver · 2. Call `execute()` · 3. Inspect `volumes` kwarg |
-| **Expected Output** | `volumes["/host/uploads"]["bind"] == "/app/uploads"` · `mode == "rw"` |
-| **Pass Criteria** | Both volume structure assertions pass |
-
----
-
-
-#### B9 — Raises on `containers.run` failure
-
-| Field | Detail |
-|---|---|
-| **Component** | `local_executor.py → LocalExecutor.execute()` |
-| **Partitions** | EP-D2 |
-| **What is being tested** | When `containers.run` raises (e.g. image not found, daemon down), the exception propagates out of `execute()` |
-| **Input** | `containers.run` side effect: `Exception("Image not found")` |
-| **Process** | 1. Mock Docker to raise · 2. Call `execute()` · 3. Observe exception |
-| **Expected Output** | `Exception` raised matching `"Image not found"` |
-| **Pass Criteria** | `pytest.raises(Exception, match="Image not found")` passes |
-
----
-
-
-#### I25 — Uses `container_name` from `method_config`
-
-| Field | Detail |
-|---|---|
-| **Component** | `local_executor.py → LocalExecutor.execute()` |
-| **Partitions** | EP-D1 |
-| **What is being tested** | The `name` passed to `containers.run` comes from `method_config["container_name"]` directly |
-| **Input** | `method_config["container_name"] = "sim_container"` |
-| **Process** | 1. Mock Docker · 2. Call `execute()` · 3. Assert `name` kwarg |
-| **Expected Output** | `containers.run` called with `name="sim_container"` |
-| **Pass Criteria** | `call_kwargs["name"] == "sim_container"` |
-| **Implementation Note** | Requires `execute()` to use `method_config["container_name"]` instead of deriving via `_get_container_name()` |
-
----
-
-## 6. Traceability Matrix
-
-| Test | Partition(s) | Component | Type |
+| ID | Test | Bug | Severity |
 |---|---|---|---|
-| U1 | EP-C1 | `get_filenames` | Unit |
-| U2 | EP-C1 | `get_filenames` | Unit |
-| U3 | EP-C5 | `get_filenames` | Unit |
-| U4 | EP-C5 | `get_filenames` | Unit |
-| U5 | EP-C1 | `get_local_file_path` | Unit |
-| U6 | EP-C1 | `get_local_file_path` | Unit |
-| U7 | EP-C1 | `get_remote_file_path` | Unit |
-| U8 | EP-O1 | `_CompletedJob.wait` | Unit |
-| U9 | EP-O1 | `_CompletedJob.logs` | Unit |
-| U10 | EP-S1 | `CloudExecutor.__init__` | Unit |
-| U11 | EP-S1 | `CloudExecutor.__init__` | Unit |
-| U12 | EP-P1 | `_parse_overall_progress` | Unit |
-| U13 | EP-C5 | `_parse_overall_progress` | Unit |
-| U14 | EP-C5 | `_parse_overall_progress` | Unit |
-| U15 | EP-C5 | `_parse_overall_progress` | Unit |
-| U16 | EP-P2 | `_parse_overall_progress` | Unit |
-| U17 | EP-C5 | `_parse_overall_progress` | Unit |
-| U18 | EP-D1 | `get_host_path_for_container_path` | Unit |
-| U19 | EP-D1 | `get_host_path_for_container_path` | Unit |
-| U20 | EP-D1 | `get_host_path_for_container_path` | Unit |
-| U21 | EP-D1 | `get_host_path_for_container_path` | Unit |
-| U22 | EP-D1 | `LocalExecutor.__init__` | Unit |
-| U23 | EP-D1 | `LocalExecutor.__init__` | Unit |
-| U24 | EP-D1 | `LocalExecutor.__init__` | Unit |
-| I1 | EP-S1 | `upload_file_via_sftp` | Integration |
-| I2 | EP-S1 | `_download_file_via_sftp` | Integration |
-| I3 | EP-O1 | `_list_remote_files` | Integration |
-| I4 | EP-S1 | `_delete_remote_path` | Integration |
-| I5 | EP-S1 | `build_singularity_image` | Integration |
-| I6 | EP-S1 | `execute_singularity_image` | Integration |
-| I7 | EP-O1 | `_collect_outputs_and_cleanup` | Integration |
-| I8 | EP-O1 | `_collect_outputs_and_cleanup` | Integration |
-| I9 | EP-O1 | `_collect_outputs_and_cleanup` | Integration |
-| I10 | EP-P2 | `poll_until_complete` | Integration |
-| I11 | EP-P1 | `poll_until_complete` | Integration |
-| I12 | EP-P1 | `poll_until_complete` | Integration |
-| I13 | EP-P1 | `poll_until_complete` | Integration |
-| I14 | EP-S1, EP-M2 | `CloudExecutor.execute` | Integration |
-| I15 | EP-S1 | `CloudExecutor.execute` | Integration |
-| I16 | EP-S1 | `CloudExecutor.execute` | Integration |
-| I17 | EP-S1 | `CloudExecutor.execute` | Integration |
-| I18 | EP-D1 | `LocalExecutor.execute` | Integration |
-| I19 | EP-D1 | `LocalExecutor.execute` | Integration |
-| I20 | EP-D1 | `LocalExecutor.execute` | Integration |
-| B1 | EP-S5 | `build_singularity_image` | Bad Day |
-| B2 | EP-S5 | `execute_singularity_image` | Bad Day |
-| B3 | EP-S4 | `_collect_outputs_and_cleanup` | Bad Day |
-| B4 | EP-D4 | `get_host_path_for_container_path` | Bad Day |
-| B5 | EP-D2 | `get_host_path_for_container_path` | Bad Day |
-| B6 | EP-D2 | `LocalExecutor.execute` | Bad Day |
+| DEF-001 | B12 (xpassed) | No stall timeout in `_poll_until_complete` — crashed remote job hangs forever | 🔴 Critical |
+| DEF-002 | B13 (xpassed) | No `POLL_MAX_FAILED_CYCLES` — corrupt JSON loops forever | 🔴 Critical |
+| DEF-003 | RS9 | `container.wait()` exit code ignored — failed run marked `Completed` | 🔴 Critical |
+| DEF-004 | RS8 | `raise "Error saving..."` is invalid Python — `TypeError` raised | 🟠 High |
+| DEF-005 | — | SSH failure mid-execute leaves remote sandbox unclean | 🟠 High |
+| DEF-006 | — (commented out) | `match` block silently skips auralization for methods beyond DE/DG | 🟡 Medium |
+
+---
+
+## 14. Complete Traceability Matrix
+
+| Test ID | Partition(s) | Component | File | Type |
+|---|---|---|---|---|
+| U1 | EP-P1 | `_parse_overall_progress` | `test_cloud_executor_final.py` | Unit |
+| U2 | EP-P2 | `_parse_overall_progress` | `test_cloud_executor_final.py` | Unit |
+| U3 | EP-C5 | `_parse_overall_progress` | `test_cloud_executor_final.py` | Unit |
+| U4 | EP-C5 | `_parse_overall_progress` | `test_cloud_executor_final.py` | Unit |
+| U5 | EP-C5 | `_parse_overall_progress` | `test_cloud_executor_final.py` | Unit |
+| U6 | EP-C1 | `get_filenames` | `test_cloud_executor_final.py` | Unit |
+| U7 | EP-C5 | `get_filenames` | `test_cloud_executor_final.py` | Unit |
+| U8 | EP-C5 | `get_filenames` | `test_cloud_executor_final.py` | Unit |
+| U-SC1 | EP-P1 | `_should_cancel` | `test_cloud_executor_final.py` | Unit |
+| U-SC2 | EP-P6 | `_should_cancel` | `test_cloud_executor_final.py` | Unit |
+| U5-MC | EP-C1 | `get_local_file_path` | `test_missing_cases.py` | Unit |
+| U6-MC | EP-C1 | `get_local_file_path` | `test_missing_cases.py` | Unit |
+| U7-MC | EP-C1 | `get_remote_file_path` | `test_missing_cases.py` | Unit |
+| U8-MC | EP-O1 | `_CompletedJob.wait` | `test_missing_cases.py` | Unit |
+| U9-MC | EP-O1 | `_CompletedJob.logs` | `test_missing_cases.py` | Unit |
+| U10 | EP-S1 | `CloudExecutor.__init__` | `test_missing_cases.py` | Unit |
+| U11 | EP-S1 | `CloudExecutor.__init__` | `test_missing_cases.py` | Unit |
+| U18 | EP-D1 | `get_host_path_for_container_path` | `test_local_executor_final.py` | Unit |
+| U19 | EP-D1 | `get_host_path_for_container_path` | `test_local_executor_final.py` | Unit |
+| U20 | EP-D2 | `get_host_path_for_container_path` | `test_local_executor_final.py` | Unit |
+| U21 | EP-D1 | `get_host_path_for_container_path` | `test_local_executor_final.py` | Unit |
+| U22 | EP-D1 | `get_host_path_for_container_path` | `test_local_executor_final.py` | Unit |
+| U23 | EP-D1 | `LocalExecutor.__init__` | `test_local_executor_final.py` | Unit |
+| U24 | EP-D1 | `LocalExecutor.__init__` | `test_local_executor_final.py` | Unit |
+| U25 | EP-D1 | `LocalExecutor.__init__` | `test_local_executor_final.py` | Unit |
+| I1 | EP-S1 | `_run_remote_command` | `test_cloud_executor_final.py` | Integration |
+| I2 | EP-S2 | `_run_remote_command` | `test_cloud_executor_final.py` | Integration |
+| I3 | EP-S3 | `_run_remote_command` | `test_cloud_executor_final.py` | Integration |
+| I4 | EP-S1 | `_run_remote_command` | `test_cloud_executor_final.py` | Integration |
+| I5 | EP-S1 | `_upload_file_via_sftp` | `test_cloud_executor_final.py` | Integration |
+| I6 | EP-S4 | `_upload_file_via_sftp` | `test_cloud_executor_final.py` | Integration |
+| I7 | EP-S1 | `_build_singularity_image` | `test_cloud_executor_final.py` | Integration |
+| I8 | EP-S5 | `_build_singularity_image` | `test_cloud_executor_final.py` | Integration |
+| I9 | EP-S6 | `_build_singularity_image` | `test_cloud_executor_final.py` | Integration |
+| I10 | EP-S1 | `_execute_singularity_image` | `test_cloud_executor_final.py` | Integration |
+| I11 | EP-S1 | `_execute_singularity_image` | `test_cloud_executor_final.py` | Integration |
+| I12 | EP-P1, EP-P2 | `_poll_until_complete` | `test_cloud_executor_final.py` | Integration |
+| I13 | EP-P1 | `_poll_until_complete` | `test_cloud_executor_final.py` | Integration |
+| I14 | EP-P3 | `_poll_until_complete` | `test_cloud_executor_final.py` | Integration |
+| I15 | EP-P6 | `_poll_until_complete` | `test_cloud_executor_final.py` | Integration |
+| I16 | EP-P7 | `_poll_until_complete` | `test_cloud_executor_final.py` | Integration |
+| I7-MC | EP-S1 | `_download_file_via_sftp` | `test_missing_cases.py` | Integration |
+| I8-MC | EP-O1 | `_list_remote_files` | `test_missing_cases.py` | Integration |
+| I9-MC | EP-S1 | `_delete_remote_path` | `test_missing_cases.py` | Integration |
+| I17 | EP-O1 | `_collect_outputs_and_cleanup` | `test_cloud_executor_final.py` | Integration |
+| I18 | EP-O1 | `_collect_outputs_and_cleanup` | `test_cloud_executor_final.py` | Integration |
+| I19 | EP-S4 | `_collect_outputs_and_cleanup` | `test_cloud_executor_final.py` | Integration |
+| I14-exec | EP-S1, EP-M2 | `CloudExecutor.execute` | `test_cloud_executor_final.py` | Integration |
+| I15-exec | EP-S1 | `CloudExecutor.execute` | `test_cloud_executor_final.py` | Integration |
+| I16-exec | EP-S1 | `CloudExecutor.execute` | `test_cloud_executor_final.py` | Integration |
+| I17-exec | EP-S1 | `CloudExecutor.execute` | `test_cloud_executor_final.py` | Integration |
+| I18-cancel | EP-S1 | `CloudExecutor.cancel` | `test_cloud_executor_final.py` | Integration |
+| I19-cancel | EP-S1 | `CloudExecutor.cancel` | `test_cloud_executor_final.py` | Integration |
+| I18-LE | EP-D1, EP-M2 | `LocalExecutor.execute` | `test_local_executor_final.py` | Integration |
+| I19-LE | EP-D1 | `LocalExecutor.execute` | `test_local_executor_final.py` | Integration |
+| I20-LE | EP-D1, EP-C1 | `LocalExecutor.execute` | `test_local_executor_final.py` | Integration |
+| I-LE-vol | EP-D1 | `LocalExecutor.execute` | `test_local_executor_final.py` | Integration |
+| I-LE-det | EP-D1 | `LocalExecutor.execute` | `test_local_executor_final.py` | Integration |
+| I-LE-DE | EP-M1, EP-G1 | `LocalExecutor.execute` | `test_local_executor_final.py` | Integration |
+| I-LE-DG | EP-M2, EP-G2 | `LocalExecutor.execute` | `test_local_executor_final.py` | Integration |
+| I-LE-NEW | EP-M3, EP-G3 | `LocalExecutor.execute` | `test_local_executor_final.py` | Integration |
+| I-LE-once | EP-D1 | `LocalExecutor.execute` | `test_local_executor_final.py` | Integration |
+| I10-LE | EP-D1 | `LocalExecutor.cancel` | `test_local_executor_final.py` | Integration |
+| I11-LE | EP-D2 | `LocalExecutor.cancel` | `test_local_executor_final.py` | Integration |
+| B1-orig | EP-S2 | `CloudExecutor.execute` | `test_cloud_executor.py` | Bad Day |
+| B2-orig | EP-S4 | `CloudExecutor.execute` | `test_cloud_executor.py` | Bad Day |
+| B3-orig | EP-S5 | `CloudExecutor.execute` | `test_cloud_executor.py` | Bad Day |
+| B4-orig | EP-P5 | `CloudExecutor.execute` | `test_cloud_executor.py` | Bad Day |
+| B5-orig | EP-P4 | `CloudExecutor.execute` | `test_cloud_executor.py` | Bad Day |
+| B6-orig | EP-P6 | `CloudExecutor.execute` | `test_cloud_executor.py` | Bad Day |
+| B7-orig | EP-S4 | `CloudExecutor.execute` | `test_cloud_executor.py` | Bad Day |
+| B8-orig | EP-S6 | `CloudExecutor.execute` | `test_cloud_executor.py` | Bad Day |
+| B12 | EP-P5 | `_poll_until_complete` | `test_cloud_executor_final.py` | Bad Day ⚠️ xfail |
+| B13 | EP-P4 | `_poll_until_complete` | `test_cloud_executor_final.py` | Bad Day ⚠️ xfail |
+| B5-MC | EP-S5 | `_execute_singularity_image` | `test_missing_cases.py` | Bad Day |
+| B5v-MC | EP-S5 | `_execute_singularity_image` | `test_missing_cases.py` | Bad Day |
+| B4-LE | EP-D4 | `get_host_path_for_container_path` | `test_local_executor_final.py` | Bad Day |
+| B5-LE | EP-D2 | `get_host_path_for_container_path` | `test_local_executor_final.py` | Bad Day |
+| B6-LE | EP-D2 | `LocalExecutor.execute` daemon down | `test_local_executor.py` | Bad Day |
+| B-LE-json | EP-C2 | `LocalExecutor.execute` missing JSON_PATH | `test_local_executor.py` | Bad Day |
+| B-LE-mnt | EP-D4 | `LocalExecutor.execute` no mount | `test_local_executor.py` | Bad Day |
+| B-LE-D5 | EP-D5 | `LocalExecutor.execute` non-zero exit | `test_local_executor.py` | Bad Day |
+| B-LE-dup | EP-D3 | `LocalExecutor.execute` duplicate name | `test_local_executor.py` | Bad Day |
+| EF1 | EP-E3 | `executor_factory` | `test_executor_factory.py` | Unit |
+| EF2 | EP-M5 | `executor_factory` | `test_executor_factory.py` | Integration |
+| EF3 | EP-M6 | `executor_factory` | `test_executor_factory.py` | Integration |
+| DS1 | EP-DS1 | `discover_methods` | `test_discovery_service.py` | Unit |
+| DS2 | EP-DS1 | `discover_method_names` | `test_discovery_service.py` | Unit |
+| DS3 | EP-DS1, EP-M5 | `discover_container_image` | `test_discovery_service.py` | Unit |
+| DS4 | EP-DS1, EP-M6 | `discover_entry_file` | `test_discovery_service.py` | Unit |
+| DS5 | EP-DS4 | `discover_methods` structure | `test_discovery_service.py` | Unit |
+| DS6 | EP-DS4 | `discover_methods` settings files | `test_discovery_service.py` | Unit |
+| RS1 | EP-DB2 | `run_solver` | `test_run_solver.py` | Unit |
+| RS2 | EP-DB3 | `run_solver` | `test_run_solver.py` | Unit |
+| RS3 | EP-C6 | `run_solver` | `test_run_solver.py` | Unit |
+| RS4 | EP-C4 | `run_solver` | `test_run_solver.py` | Unit |
+| RS5 | EP-C3 | `run_solver` | `test_run_solver.py` | Unit |
+| RS6 | EP-C7 | `run_solver` | `test_run_solver.py` | Unit |
+| RS7 | EP-O7 | `run_solver` | `test_run_solver.py` | Integration |
+| RS8 | EP-O4 | `run_solver` | `test_run_solver.py` | Unit |
+| RS9 | EP-D5 | `run_solver` | `test_run_solver.py` | Integration |
+| REM1 | EP-DB4 | `run_solver` | `test_remaining_cases.py` | Unit |
+| REM2 | EP-DB4 | `run_solver` | `test_remaining_cases.py` | Unit |
+| REM3 | EP-DS3 | `discover_methods` | `test_remaining_cases.py` | Unit |
+| REM4 | EP-M4 | `discover_container_image` | `test_remaining_cases.py` | Unit |
+| REM5 | EP-M4, EP-M6 | `discover_entry_file` | `test_remaining_cases.py` | Unit |
