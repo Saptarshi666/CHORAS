@@ -90,6 +90,13 @@ The following known gaps remain after our test suite:
   invalid Python — raises `TypeError` instead of a meaningful error message.
 - **DEF-006** — New simulation methods beyond DE and DG silently skip
   auralization due to an incomplete `match` block.
+  **DEF-007** - The functions in the cloud executor assume that the outputs made
+  by the simmulation methods will be .json anc .csv files only. Thus the download 
+  function will download all the .json and .csv files that are present in the remote 
+  sandbox. New simmulation methods that make other output files but dont have an extension of 
+  .json or .csv will not be downloaded. Also .json and .csv files that may not be output files 
+  will also be downloaded by the local machines from the remote machine
+
 
 All residual risks are documented in the Defect Log in `Test Results.md`
 and are prioritised for resolution before production use.
@@ -305,7 +312,7 @@ after the full test suite has been implemented.
 | EP-DS2 | ⚠️ Implicit | `test_discovery_service.py` | MyNewMethod present in real config |
 | EP-DS3 | ✅ | `test_remaining_cases.py` | |
 | EP-DS4 | ✅ | `test_discovery_service.py` | |
-| EP-DS5 | ⚠️ Not tested | — | Empty config out of scope |
+| EP-DS5 | ⚠️ Not tested | — | Implicit |
 
 ---
 
