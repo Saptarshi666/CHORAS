@@ -43,7 +43,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./uploads:/app/uploads
       - ./simulation-backend:/app/simulation-backend 
-      - /c/Users/20255590/.ssh:/root/.ssh:ro
+      # - /c/Users/20255413/.ssh:/root/.ssh:ro
 
   # BUILD-ONLY: DE simulation (profile: sim_method)
   de-method:
