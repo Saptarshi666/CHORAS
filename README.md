@@ -27,12 +27,13 @@ This section provides a description of the simulation specific settings in CHORA
  
 ## Submodules
 
-You'll find two submodules in this repository:
+You'll find three submodules in this repository:
 
 - frontend-v2
 - backend
+- simulation-bckend
 
-You **won't** need these if you simply want to run the Docker setup described in [setup_instructions.md](./setup_instructions.md). 
+You **won't** need these if you simply want to run the Docker setup described in [setup_instructions.md](./setup_instructions.md). (This is the old readme.md kindly look at the new documentation inside the docs_new folder in the backend module to understand how to setup nd run the application)
 
 If you are interested in the underlying code anyway, run
 
